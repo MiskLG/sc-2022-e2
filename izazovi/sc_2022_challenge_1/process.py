@@ -36,7 +36,7 @@ def count_blood_cells(image_path):
 
 
     img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_NONE)
-    #centers, radius = cv.minEnclosingCircle(contours[0])
+
     img = img_base.copy()
 
 
@@ -64,11 +64,42 @@ def count_blood_cells(image_path):
     #cv.drawContours(img, contours, -1, (255, 0, 0), 1)
     img_binary = 0*img_binary
     cv.drawContours(img_binary, contours, -1, (151, 113, 222), cv.FILLED)
+
+
+    kernel = np.ones((3, 3), np.uint8)
+
+    # img_binary = cv.morphologyEx(img_binary, cv.MORPH_OPEN, kernel, iterations=2)
+    # img_binary = cv.morphologyEx(img_binary, cv.MORPH_CLOSE, kernel, iterations=1)
+    # sure background area
+
+    dist_transform = cv.distanceTransform(img_binary, cv.DIST_C, 3)
+    ret, img_binary = cv.threshold(dist_transform, 0.4 * dist_transform.max(), 255, 0)
+    img_binary = np.uint8(img_binary)
+    img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_NONE)
+
+    popup = []
+    for i in range(0, len(contours)):
+        if len(contours[i]) < 50 or len(contours[i]) > 600:
+            popup.append(i)
+    for i in popup[::-1]:
+        contours.pop(i)
+
+    show_image(img_binary)
+
+    for con in contours:
+        centers, radius = cv.minEnclosingCircle(con)
+        print(centers)
+        centers = tuple([(int(element[0]), int(element[1])) for element in [centers]])
+        print(centers[0])
+        radius = int(np.floor(radius))
+        cv.circle(img_binary, centers[0], radius, (151, 113, 222), cv.FILLED)
+
+    print(centers)
     #print(contours)
     print(contours_updated)
     #print(len(contours_updated))
     print(len(contours))
-
+    show_image(img_binary)
 
     #cv.fillPoly(img_binary, pts=[contours], color=(255, 255, 255))
 
@@ -105,13 +136,12 @@ def count_blood_cells(image_path):
 
     # Finding sure foreground area
 
-    img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    #img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 #    centers, radius = cv.minEnclosingCircle(contours[0])
 
  #   print(centers)
-    show_image(img_binary)
     dist_transform = cv.distanceTransform(img_binary, cv.DIST_L2, 3)
-    ret, sure_fg = cv.threshold(dist_transform, 0.55 * dist_transform.max(), 255, 0)
+    ret, sure_fg = cv.threshold(dist_transform, 0.2 * dist_transform.max(), 255, 0)
     #sure_fg = cv.erode(img_binary, kernel, iterations=20)
     # Finding unknown region
     sure_fg = np.uint8(sure_fg)
@@ -120,7 +150,7 @@ def count_blood_cells(image_path):
     unknown = cv.subtract(sure_bg, sure_fg)
     show_image(sure_fg)
 
-    img, contours, hierarchy = cv.findContours(sure_fg, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    img, contours, hierarchy = cv.findContours(sure_fg, cv.RETR_LIST, cv.CHAIN_APPROX_NONE)
     # Marker labelling
     ret, markers = cv.connectedComponents(sure_fg)
     # Add one to all labels so that sure background is not 0, but 1
