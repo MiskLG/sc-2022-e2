@@ -70,7 +70,7 @@ dependencies:
   - openblas=0.2.20=8
   - opencv=3.4.1=py36_blas_openblash829a850_201
   - openh264=1.8.0=hdbcaa40_1000
-  - openssl=1.1.1=h7b6447c_0
+  - openssl=1.1.1
   - pandas=0.25.2=py36he6710b0_0
   - pandoc=2.7.3=0
   - pandocfilters=1.4.2=py_1
