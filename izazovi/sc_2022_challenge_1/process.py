@@ -3,7 +3,7 @@ import cv2 as cv
 from matplotlib import pyplot as plt
 import numpy as np
 
-def count_blood_cells(image_path):
+def count_blood_cells2(image_path):
     """
     Procedura prima putanju do fotografije i vraca broj crvenih krvnih zrnaca.
 
@@ -26,8 +26,7 @@ def count_blood_cells(image_path):
     result = cv.bitwise_and(img_base, img_base, mask=mask)
     show_image(mask)
 
-    result = cv.cvtColor(result, cv.COLOR_HSV2RGB)
-    show_image(result)
+    show_image(cv.cvtColor(result, cv.COLOR_HSV2RGB))
 
     kernel = np.array([[0, -1, 0],
                        [-1, 5, -1],
@@ -50,16 +49,16 @@ def count_blood_cells(image_path):
 
     #img_binary = cv.erode(img_binary, kernel, iterations=3)
 
-    img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-    cv.drawContours(img_binary, contours, -1, (151, 113, 222), cv.FILLED)
-    show_image(img_binary)
+    #img, contours, hierarchy = cv.findContours(img_binary, cv., cv.CHAIN_APPROX_NONE)
+    #cv.drawContours(img_binary, contours, -1, (151, 113, 222), cv.FILLED)
+    #show_image(img_binary)
 
 
 
     #dist_transform = cv.distanceTransform(img_binary, cv.DIST_C, 3)
     #ret, img_binary = cv.threshold(dist_transform, 0.25 * dist_transform.max(), 255, 0)
-    #img_binary = np.uint8(img_binary)
-    img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_NONE)
+    img_binary = cv.cvtColor(img_binary, cv.COLOR_BGR2GRAY)
+    img, contours, hierarchy = cv.findContours(img_binary, cv.CV_8UC1, cv.CHAIN_APPROX_NONE)
     img = img_base.copy()
 
 
@@ -67,18 +66,12 @@ def count_blood_cells(image_path):
     print(len(contours))
     cv.drawContours(img_binary, contours, -1, (151, 113, 222), 1)
     show_image(img_binary)
-    popup = []
-    for i in range(0,len(contours)):
-        if len(contours[i]) > 700:
-            popup.append(i)
-    for i in popup[::-1]:
-        contours.pop(i)
     #contours_map = [len(con) > 50 for con in contours]
     #img_binary = cv.erode(img_binary, kernel, iterations=9)
 
     popup = []
     for i in range(0,len(contours)):
-        if len(contours[i]) < 130 or len(contours[i]) > 600:
+        if len(contours[i]) < 100:
             popup.append(i)
     for i in popup[::-1]:
         contours.pop(i)
@@ -93,7 +86,7 @@ def count_blood_cells(image_path):
     #contours_updated = np.array(contours_updated)
     #cv.drawContours(img, contours, -1, (255, 0, 0), 1)
     img_binary = 0*img_binary
-    cv.drawContours(img_binary, contours, -1, (151, 113, 222), cv.FILLED)
+    cv.drawContours(img_binary, contours, -1, (151, 113, 222), cv.CHAIN_APPROX_SIMPLE)
 
 
     kernel = np.ones((3, 3), np.uint8)
@@ -112,7 +105,7 @@ def count_blood_cells(image_path):
 
     popup = []
     for i in range(0, len(contours)):
-        if len(contours[i]) < 20 or len(contours[i]) > 600:
+        if len(contours[i]) < 20:
             popup.append(i)
     for i in popup[::-1]:
         contours.pop(i)
@@ -130,6 +123,9 @@ def count_blood_cells(image_path):
 
         radius = int(np.floor(radius))
         if not (centers[0][0] < 25 or centers[0][0] > 615 or centers[0][1] < 25 or centers[0][1] > 455):
+            print("asdadsadadsasdsadasddasdsads")
+            print(cv.contourArea(contours[i]))
+            print(radius*radius*np.pi)
             cv.circle(img_binary, centers[0], 40, (151, 113, 222), cv.FILLED)
 
     #cv.fillPoly(img_binary, pts=[contours], color=(255, 255, 255))
@@ -172,7 +168,7 @@ def count_blood_cells(image_path):
 
  #   print(centers)
     dist_transform = cv.distanceTransform(img_binary, cv.DIST_L2, 3)
-    ret, sure_fg = cv.threshold(dist_transform, 0.4 * dist_transform.max(), 255, 0)
+    ret, sure_fg = cv.threshold(dist_transform, 0.23 * dist_transform.max(), 255, 0)
     #sure_fg = cv.erode(img_binary, kernel, iterations=20)
     # Finding unknown region
     sure_fg = np.uint8(sure_fg)
@@ -186,11 +182,13 @@ def count_blood_cells(image_path):
     # Now, mark the region of unknown with zero
     markers[unknown == 255] = 0
 
+    print(len(markers))
+    print(ret)
     markers = cv.watershed(img_base, markers)
 
     img_base[markers == -1] = [255, 0, 0]
     print(len(markers))
-    blood_cell_count = len(contours)
+    blood_cell_count = ret
     #img, contours, hierarchy = cv.findContours(img_binary, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
     #img = img_base.copy()
     #print(markers == -1)
@@ -219,19 +217,88 @@ def count_blood_cells(image_path):
     #blood_cell_count = len(contours)
     return blood_cell_count
 
+def count_blood_cells(image_path):
+    blood_cell_count = 0
+    # TODO - Prebrojati crvena krvna zrnca i vratiti njihov broj kao povratnu vrednost ove procedure
+
+    # Setup for image processing
+    img_base = cv.imread(image_path)
+    img_base = cv.cvtColor(img_base, cv.COLOR_BGR2RGB)
+    print(image_path)
+
+    show_image(img_base)
+    # Get binary image using gaussian adaptive method
+    img_binary = get_binary_image2(img_base)
+    #show_image(img_binary)
+
+    # Remove contours that contain blue tint
+    lower_range = np.array([60, 35, 150])
+    upper_range = np.array([180, 255, 255])
+
+    img_hsv = cv.cvtColor(img_base, cv.COLOR_RGB2HSV)
+    mask = cv.inRange(img_hsv, lower_range, upper_range)  # Create a mask with range
+
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (11, 11))
+    mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel, iterations=3)
+    mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel, iterations=3)
+    show_image(mask)
+
+    result = cv.bitwise_and(img_binary, img_binary, mask=mask)
+    img_binary = cv.bitwise_xor(img_binary, result)
+    show_image(result)
+
+    # Remove small noise
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (11, 11))
+    img_binary = cv.morphologyEx(img_binary, cv.MORPH_OPEN, kernel, iterations=1)
+    show_image(img_binary)
+
+    # Connect contours
+    #kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
+    #img_binary = cv.morphologyEx(img_binary, cv.MORPH_CLOSE, kernel, iterations=2)
+
+    # Remove small contours
+    img, contours, hierarchy = cv.findContours(img_binary, cv.CV_8UC1, cv.CHAIN_APPROX_SIMPLE)
+    popup = []
+    for i in range(0, len(contours)):
+        if len(contours[i]) < 80:
+            popup.append(i)
+    for i in popup[::-1]:
+        contours.pop(i)
+
+    # Clear image and draw contours
+    img_binary = 0 * img_binary
+    cv.drawContours(img_binary, contours, -1, (255, 255, 255), cv.FILLED)
+    show_image(img_binary)
+
+    img_binary = 0 * img_binary
+    for i in range(0, len(contours)):
+        centers, radius = cv.minEnclosingCircle(contours[i])
+        centers = tuple([(int(element[0]), int(element[1])) for element in [centers]])
+
+        radius = int(np.floor(radius))
+        if not (centers[0][0] < 30 or centers[0][0] > 610 or centers[0][1] < 30 or centers[0][1] > 450):
+            cv.circle(img_binary, centers[0], 40, (151, 113, 222), cv.FILLED)
+    show_image(img_binary)
+
+    # WATERSHED?
+    img_binary = cv.morphologyEx(img_binary, cv.MORPH_OPEN, kernel)
+    show_image(img_binary)
+
+    img, contours, hierarchy = cv.findContours(img_binary, cv.CV_8UC1, cv.CHAIN_APPROX_SIMPLE)
+
+    return len(contours)
+
+def get_binary_image2(img_base):
+    image_ada = cv.cvtColor(img_base, cv.COLOR_RGB2GRAY)
+    image_ada = cv.GaussianBlur(image_ada, (7, 7), 1)
+    image_ada_bin = cv.adaptiveThreshold(image_ada, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 101, 1)
+    return image_ada_bin
 
 def get_binary_image(img_base):
-    gray = cv.cvtColor(img_base, cv.COLOR_HSV2RGB)
-    gray = cv.cvtColor(img_base, cv.COLOR_RGB2GRAY)
+    image_ada = cv.cvtColor(img_base, cv.COLOR_HSV2RGB)
 
-    ret, img_tr = cv.threshold(gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
-    # img_tr = gray > 180
-    image_ada = cv.cvtColor(img_base, cv.COLOR_RGB2GRAY)
-
-    ret, image_ada_bin = cv.threshold(image_ada, 100, 255, cv.THRESH_BINARY)
-
-    image_ada_bin = cv.adaptiveThreshold(image_ada, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY, 151, 2)
-
+    ret, image_ada_bin = cv.threshold(image_ada, 1, 255, cv.THRESH_BINARY)
+    #image_ada_bin = cv.adaptiveThreshold(image_ada, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 151, 2)
     return image_ada_bin
 
 
