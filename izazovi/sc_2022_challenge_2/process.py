@@ -231,16 +231,20 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     lista = get_most_prominent_colors(img_base, ranged)
     print(lista)
     print(image_path)
+    for i in range(0, len(lista)):
+        img = create_bin_image_based_on_color(img_base, lista[i][0], ranged)
+        img = img_to_binary(img)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+        selected_regions, letters, distances = select_roi(img)
+        if len(letters) < 120 or i == 1:
+            break
 
-    img = create_bin_image_based_on_color(img_base, lista[0][0], ranged)
-    img = img_to_binary(img)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
-    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
     show_image(img_base)
     show_image(img)
 
-    selected_regions, letters, distances = select_roi(img)
+
     #display_image(letters)
     print('Broj prepoznatih regiona:', len(letters))
 
@@ -266,7 +270,7 @@ def get_most_prominent_colors(img_base, ranged):
         sorted_dict.update({item[0]: item[1]})
 
     list_to_return = []
-    for m in range(0, 100):
+    for m in range(0, 200):
         list_to_return.append(sorted_dict.popitem())
     sorted_dict = {}
     for item in list_to_return:
