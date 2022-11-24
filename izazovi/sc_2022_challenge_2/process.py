@@ -113,11 +113,13 @@ def combine_regions(regions_array):
     for region in regions_array:
         for region2 in regions_array:
             # x11 <  x21 and x21 < x12   ## x2 is contained in x1
-            if region[1][0] < region2[1][0] < region[1][0] + region[1][2] and region2[1][0] + abs((region2[1][0] - abs(region2[1][0] - region2[1][2])))/2 < region[1][0] + region[1][2]:
+            if region is not region2 and region[1][0] < region2[1][0] < region[1][0] + region[1][2] and region2[1][0] + abs((region2[1][0] - abs(region2[1][0] - region2[1][2])))/2 < region[1][0] + region[1][2]:
                 # height = height1 + height2 + difference between contures
                 # y1 = y2 - moving y point up
                 region[1] = (region[1][0], region2[1][1], region[1][2], region[1][3] + np.abs(region[1][1]-region2[1][1]) + region2[1][3])
-                regions_array.remove(region2)
+                print("test")
+                #regions_array.remove(region2)
+
 
     return regions_array
 
@@ -149,7 +151,7 @@ def select_roi(image_bin):
         distance = next_rect[0] - (current[0]+current[2]) #X_next - (X_current + W_current)
         region_distances.append(distance)
 
-    return sorted_regions, region_distances
+    return None, sorted_regions, region_distances
 
 def train_or_load_character_recognition_model(train_image_paths):
     """
@@ -162,7 +164,6 @@ def train_or_load_character_recognition_model(train_image_paths):
     :return: Objekat modela
     """
     # probaj da ucitas prethodno istreniran model
-    return None
     model = load_trained_ann()
     if model is not None:
         return model
@@ -205,7 +206,6 @@ def train_or_load_character_recognition_model(train_image_paths):
 
     return model
 
-
 def extract_text_from_image(trained_model, image_path, vocabulary):
     """
     Procedura prima objekat istreniranog modela za prepoznavanje znakova (karaktera), putanju do fotografije na kojoj
@@ -226,18 +226,30 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
 
     img_base = cv2.imread(image_path)
     img_base = cv2.cvtColor(img_base, cv2.COLOR_BGR2RGB)
-    lista = get_most_prominent_colors(img_base)
+    # fine-tuning practically
+    ranged = 19
+    lista = get_most_prominent_colors(img_base, ranged)
     print(lista)
     print(image_path)
 
-    img = create_bin_image_based_on_color(img_base, lista[2][0], 45)
+    img = create_bin_image_based_on_color(img_base, lista[0][0], ranged)
+    img = img_to_binary(img)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+    img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+    show_image(img_base)
     show_image(img)
+
+    selected_regions, letters, distances = select_roi(img)
+    #display_image(letters)
+    print('Broj prepoznatih regiona:', len(letters))
+
+    #show_image(img)
     return extracted_text
 
 
-def get_most_prominent_colors(img_base):
+def get_most_prominent_colors(img_base, ranged):
     dict1 = {}
-    print(len(img_base))
     for j in range(0,len(img_base)):
         for i in img_base[j]:
             tuplei = (i[0], i[1], i[2])
@@ -247,39 +259,53 @@ def get_most_prominent_colors(img_base):
                 dict1.update({tuplei: 1})
 
 
-    #sorted_dict2.update({item[0]: item[1]} for item in sorted_dict1)
-    gray_noise_removed = remove_noise_from_color_list(dict1, 3,img_base)
+    gray_noise_removed = remove_noise_from_color_list(dict1, 3)
     sorted_list = sorted(gray_noise_removed.items(), key=lambda x: x[1], reverse=False)
     sorted_dict = {}
     for item in sorted_list:
         sorted_dict.update({item[0]: item[1]})
+
     list_to_return = []
-    for m in range(0,20):
+    for m in range(0, 100):
         list_to_return.append(sorted_dict.popitem())
-    return list_to_return
+    sorted_dict = {}
+    for item in list_to_return:
+        sorted_dict.update({item[0]: item[1]})
+
+    color_noise_removed = remove_noise_from_text(sorted_dict, ranged)
+    sorted_dict = {}
+    for item in list_to_return:
+        sorted_dict.update({item[0]: item[1]})
+    sorted_list = sorted(sorted_dict.items(), key=lambda x: x[1], reverse=False)
+    sorted_dict = {}
+    for item in sorted_list:
+        sorted_dict.update({item[0]: item[1]})
+    list_to_return = []
+    for m in range(0, 20):
+        list_to_return.append(sorted_dict.popitem())
+
+    return color_noise_removed
 
 
 def remove_noise_from_text(color_dict, rangeb):
-    list_to_do = []
     list_done = []
     for item in color_dict.items():
+        found = False
         if len(list_done) == 0:
             list_done.append(item)
         for i in range(0, len(list_done)):
-            if rangeb + list_done[i][0][0] > item[0][0] > list_done[i][0][0] - rangeb or rangeb + list_done[i][0][1] \
-                    > item[0][1] > list_done[i][0][1] - rangeb or rangeb + list_done[i][0][2] > item[0][2] > list_done[i][0][2] - rangeb:
-                list_to_do.append((item[0], item[1], (list_done[i][0][1], list_done[i][0][1], list_done[i][0][2]) ))
+            if rangeb + list_done[i][0][0] > item[0][0] > list_done[i][0][0] - rangeb and rangeb + list_done[i][0][1] \
+                    > item[0][1] > list_done[i][0][1] - rangeb and rangeb + list_done[i][0][2] > item[0][2] > list_done[i][0][2] - rangeb:
+                list_done[i] = ((list_done[i][0][0], list_done[i][0][1], list_done[i][0][2]), item[1]+list_done[i][1])
+                found = True
+                break
 
-    for item in list_to_do:
-        color_dict.pop(item[0])
-        if (item[2], item[2], item[2]) in color_dict:
-            color_dict[(item[2], item[2], item[2])] += item[1]
-        else:
-            color_dict.update({(item[2][0], item[2][1], item[2][2]): item[1]})
-    return color_dict
+        if found is False:
+            list_done.append(item)
+    return list_done
 
 
-def remove_noise_from_color_list(color_list, split_number, img):
+def remove_noise_from_color_list(color_list, split_number):
     step = 255/split_number
     step_list = []
     for i in range(0, split_number+1):
@@ -295,9 +321,11 @@ def remove_noise_from_color_list(color_list, split_number, img):
     for item in list_to_do:
         color_list.pop(item[0])
         if (item[2], item[2], item[2]) in color_list:
-            color_list[(item[2], item[2], item[2])] += item[1]
+            a = 0
+            #color_list[(item[2], item[2], item[2])] += item[1]
         else:
-            color_list.update({(item[2], item[2], item[2]): item[1]})
+            a = 0
+            #color_list.update({(item[2], item[2], item[2]): item[1]})
 
     return color_list
 
@@ -310,13 +338,20 @@ def change_one_color_to_another(img, color1, color2):
     return img
 
 
-def create_bin_image_based_on_color(img, color1, ranged):
-    color1 = np.array((color1[0]-ranged, color1[1]-ranged, color1[2]-ranged))
-    color2 = np.array((color1[0]+ranged, color1[1]+ranged, color1[2]+ranged))
+def create_bin_image_based_on_color(img, color, ranged):
+    color1 = np.array((color[0]-ranged, color[1]-ranged, color[2]-ranged))
+    color2 = np.array((color[0]+ranged, color[1]+ranged, color[2]+ranged))
     mask = cv2.inRange(img, color1, color2)
     result = cv2.bitwise_and(img, img, mask=mask)
     img_binary = cv2.bitwise_and(img, result)
     return img_binary
+
+
+def img_to_binary(img):
+    img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    _, img_bin = cv2.threshold(img_gray, 1, 255, cv2.THRESH_BINARY)
+    return img_bin
+
 
 def get_binary_image(img_base):
     image_ada = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY)
