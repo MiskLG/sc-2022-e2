@@ -1,4 +1,8 @@
+import copy
 import os
+
+import sklearn.linear_model
+
 os.environ['KERAS_BACKEND'] = 'theano'
 
 import cv2
@@ -8,6 +12,7 @@ from keras.models import model_from_json
 from keras.models import Sequential
 from keras.layers.core import Dense,Activation
 from keras.optimizers import SGD
+from sklearn.cluster import KMeans
 
 def load_image(path):
     return cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
@@ -31,7 +36,7 @@ def erode(image):
     return cv2.erode(image, kernel, iterations=1)
 
 def resize_region(region):
-    resized = cv2.resize(region,(28,28), interpolation = cv2.INTER_NEAREST)
+    resized = cv2.resize(region,(32,32), interpolation = cv2.INTER_NEAREST)
     return resized
 
 
@@ -65,7 +70,8 @@ def create_ann():
     '''
     ann = Sequential()
     # Postaviti slojeve neurona mreže 'ann'
-    ann.add(Dense(128, input_dim=784, activation='sigmoid'))
+    ann.add(Dense(500, input_dim=1024, activation='sigmoid'))
+    ann.add(Dense(200, activation='sigmoid'))
     ann.add(Dense(60, activation='sigmoid'))
     return ann
 
@@ -79,7 +85,7 @@ def train_ann(ann, X_train, y_train):
     ann.compile(loss='mean_squared_error', optimizer=sgd)
 
     # obucavanje neuronske mreze
-    ann.fit(X_train, y_train, epochs=500, batch_size=1, verbose=0, shuffle=False)
+    ann.fit(X_train, y_train, epochs=20000, batch_size=1, verbose=0, shuffle=True)
 
     return ann
 
@@ -110,20 +116,55 @@ def load_trained_ann():
 
 
 def combine_regions(regions_array):
+    #TODO fixes crashes on bad regions
+    # regions_array.remove(region2) is creating problems
+    good_regions = copy.deepcopy(regions_array)
+    bad_regions = []
+    i = 0
     for region in regions_array:
         for region2 in regions_array:
             # x11 <  x21 and x21 < x12   ## x2 is contained in x1
             if region is not region2 and region[1][0] < region2[1][0] < region[1][0] + region[1][2] and region2[1][0] + abs((region2[1][0] - abs(region2[1][0] - region2[1][2])))/2 < region[1][0] + region[1][2]:
                 # height = height1 + height2 + difference between contures
                 # y1 = y2 - moving y point up
-                region[1] = (region[1][0], region2[1][1], region[1][2], region[1][3] + np.abs(region[1][1]-region2[1][1]) + region2[1][3])
-                print("test")
-                #regions_array.remove(region2)
+                if region2[1][1] < region[1][1]:
+                    prvi = region
+                    drugi = region2
+                else:
+                    prvi = region2
+                    drugi = region
 
+                region[1] = (prvi[1][0], drugi[1][1], prvi[1][2],
+                             prvi[1][3] + np.abs(prvi[1][1] - drugi[1][1] - drugi[1][3]) + drugi[1][3])
+                good_regions[i][1] = (prvi[1][0], prvi[1][1], prvi[1][2], prvi[1][3])
 
-    return regions_array
+        i += 1
 
-def select_roi(image_bin):
+    i = 0
+    br = []
+    for gr in good_regions:
+        if gr[1][2] * gr[1][3] < 100:
+            br.append(i)
+        i += 1
+    br = list(set(br))
+    for b in sorted(br, reverse=True):
+        del good_regions[b]
+
+    i = 0
+    br = []
+    for i in range(0, len(good_regions)-1):
+        for j in range(i+1, len(good_regions)):
+            if good_regions[i][1][0] == good_regions[j][1][0]:
+                br.append(i)
+
+    br = list(set(br))
+    print(br)
+    for b in sorted(br, reverse=True):
+        del good_regions[b]
+
+    return good_regions
+
+def select_roi(image_bin,img_base):
     '''
     Funkcija kao u vežbi 2, iscrtava pravougaonike na originalnoj slici, pronalazi sortiran niz regiona sa slike,
     i dodatno treba da sačuva rastojanja između susednih regiona.
@@ -131,15 +172,50 @@ def select_roi(image_bin):
     img, contours, hierarchy = cv2.findContours(image_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     #Način određivanja kontura je promenjen na spoljašnje konture: cv2.RETR_EXTERNAL
     regions_array = []
+
+    contours2 = []
+    xs = []
+    ys = []
     for contour in contours:
+        if len(contour) < 10:
+            continue
+        contours2.append(contour)
+        x, y, w, h = cv2.boundingRect(contour)
+        xs.append(x+w/2)
+        ys.append(y+h/2)
+
+    reg = sklearn.linear_model.LinearRegression().fit(np.array(xs).reshape(-1, 1), np.array(ys))
+    first = (0, reg.predict(np.array([0]).reshape(-1,1)))
+    second = (100, reg.predict(np.array([100]).reshape(-1,1)))
+    arctan_num = abs(first[1][0]-second[1][0])/abs(first[0]-second[0])
+    angle = np.arctan(arctan_num)*180/np.pi
+    if first[1][0] > second[1][0]:
+        angle *= -1
+    h,w = image_bin.shape[:2]
+    m = cv2.getRotationMatrix2D((w // 2, h // 2) , angle, 1.0)
+    image_bin2 = cv2.warpAffine(image_bin, m, (w, h))
+
+    show_image(image_bin2)
+    contours = contours2
+    i = 0
+    for contour in contours:
+        if len(contour) < 5:
+            continue
         x, y, w, h = cv2.boundingRect(contour)
         region = image_bin[y:y+h+1, x:x+w+1]
-        regions_array.append([region, (x, y, w, h)])
+        regions_array.append([region, (x-1, y-1, w+2, h+2)])
+
+    # rotating picture based on the axis of the text
+
+    regions_array = sorted(regions_array, key=lambda item: item[1][0])
     # combining regions
     regions_array = combine_regions(regions_array)
     regions_array = [[resize_region(reg[0]), (reg[1][0], reg[1][1], reg[1][2], reg[1][3])] for reg in regions_array]
-    regions_array = sorted(regions_array, key=lambda item: item[1][0])
 
+    #for r in regions_array:
+        #x,y,w,h = r[1]
+        #cv2.rectangle(img_base, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    #show_image(img_base)
     sorted_regions = [region[0] for region in regions_array]
     sorted_rectangles = [region[1] for region in regions_array]
     region_distances = []
@@ -151,7 +227,7 @@ def select_roi(image_bin):
         distance = next_rect[0] - (current[0]+current[2]) #X_next - (X_current + W_current)
         region_distances.append(distance)
 
-    return None, sorted_regions, region_distances
+    return img_base, sorted_regions, region_distances
 
 def train_or_load_character_recognition_model(train_image_paths):
     """
@@ -165,16 +241,21 @@ def train_or_load_character_recognition_model(train_image_paths):
     """
     # probaj da ucitas prethodno istreniran model
     model = load_trained_ann()
+    #model = None
     if model is not None:
         return model
 
     imgs = []
+    imgs2 = []
     for i in range(0, len(train_image_paths)):
         img = load_image(train_image_paths[i])
+        imgs2.append(img)
         imgs.append(invert(image_bin(image_gray(img))))
 
-    letters1, region_distances1 = select_roi(imgs[0])
-    letters2, region_distances2 = select_roi(imgs[1])
+    img1, letters1, region_distances1 = select_roi(imgs[0], imgs2[0])
+    img2, letters2, region_distances2 = select_roi(imgs[1], imgs2[1])
+
+    show_image(img1)
 
     print(len(letters1))
     print(len(letters2))
@@ -206,6 +287,29 @@ def train_or_load_character_recognition_model(train_image_paths):
 
     return model
 
+def display_result(outputs, alphabet, k_means):
+    '''
+    Funkcija određuje koja od grupa predstavlja razmak između reči, a koja između slova, i na osnovu
+    toga formira string od elemenata pronađenih sa slike.
+    Args:
+        outputs: niz izlaza iz neuronske mreže.
+        alphabet: niz karaktera koje je potrebno prepoznati
+        kmeans: obučen kmeans objekat
+    Return:
+        Vraća formatiran string
+    '''
+    # Odrediti indeks grupe koja odgovara rastojanju između reči, pomoću vrednosti iz k_means.cluster_centers_
+    w_space_group = max(enumerate(k_means.cluster_centers_), key = lambda x: x[1])[0]
+    result = alphabet[winner(outputs[0])]
+    for idx, output in enumerate(outputs[1:,:]):
+        # Iterativno dodavati prepoznate elemente kao u vežbi 2, alphabet[winner(output)]
+        # Dodati space karakter u slučaju da odgovarajuće rastojanje između dva slova odgovara razmaku između reči.
+        # U ovu svrhu, koristiti atribut niz k_means.labels_ koji sadrži sortirana rastojanja između susednih slova.
+        if (k_means.labels_[idx] == w_space_group):
+            result += ' '
+        result += alphabet[winner(output)]
+    return result
+
 def extract_text_from_image(trained_model, image_path, vocabulary):
     """
     Procedura prima objekat istreniranog modela za prepoznavanje znakova (karaktera), putanju do fotografije na kojoj
@@ -233,20 +337,35 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     print(image_path)
     for i in range(0, len(lista)):
         img = create_bin_image_based_on_color(img_base, lista[i][0], ranged)
+
         img = img_to_binary(img)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
         img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
-        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
-        selected_regions, letters, distances = select_roi(img)
-        if len(letters) < 120 or i == 1:
+
+        #img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+        selected_regions, letters, distances = select_roi(img,img_base)
+        if 20 < len(letters) < 150:
             break
 
-    show_image(img_base)
-    show_image(img)
+    print('Broj prepoznatih regiona:', len(letters))
 
+    distances = np.array(distances).reshape(len(distances), 1)
+    # Neophodno je da u K-means algoritam bude prosleđena matrica u kojoj vrste određuju elemente
+
+    k_means = KMeans(n_clusters=2, max_iter=2000, tol=0.00001, n_init=10)
+    k_means.fit(distances)
 
     #display_image(letters)
-    print('Broj prepoznatih regiona:', len(letters))
+
+    alphabet = ['A', 'B', 'C', 'Č', 'Ć', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+                'N', 'O', 'P', 'Q', 'R', 'S', 'Š', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Ž',
+                'a', 'b', 'c', 'č', 'ć', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+                'n', 'o', 'p', 'q', 'r', 's', 'š', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'ž']
+
+    inputs = prepare_for_ann(letters)
+    results = trained_model.predict(np.array(inputs, np.float32))
+    extracted_text = (display_result(results, alphabet, k_means))
+    print(extracted_text)
 
     #show_image(img)
     return extracted_text
@@ -366,5 +485,5 @@ def get_binary_image(img_base):
 
 def show_image(img):
     plt.imshow(img)
-    plt.show()
+    #plt.show()
     return
