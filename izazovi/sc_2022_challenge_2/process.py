@@ -5,6 +5,7 @@ import sklearn.linear_model
 
 os.environ['KERAS_BACKEND'] = 'theano'
 
+from fuzzywuzzy import fuzz
 import cv2
 from matplotlib import pyplot as plt
 import numpy as np
@@ -248,7 +249,7 @@ def train_or_load_character_recognition_model(train_image_paths):
     """
     # probaj da ucitas prethodno istreniran model
     model = load_trained_ann()
-    model = None
+    #model = None
     if model is not None:
         return model
 
@@ -381,10 +382,31 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     inputs = prepare_for_ann(letters)
     results = trained_model.predict(np.array(inputs, np.float32))
     extracted_text = (display_result(results, alphabet, k_means))
-    print(extracted_text)
 
+
+    extracted_text_list = extracted_text.split(" ")
+    all_values = 0
+    for v in vocabulary.values():
+        all_values += int(v)
+    ll = []
+    for text in extracted_text_list:
+        best_value = 0
+        best_match = ''
+        for v in vocabulary.items():
+            temp = fuzz.ratio(text, v[0])
+            if best_value < temp/all_values:
+                best_value = temp/all_values
+                best_match = v[0]
+        ll.append(best_match)
+
+    extracted_text2 = ''
+    for t in ll:
+        extracted_text2 += t + ' '
+
+    print(extracted_text)
+    print(extracted_text2)
     #show_image(img)
-    return extracted_text
+    return extracted_text2
 
 
 def get_most_prominent_colors(img_base, ranged):
