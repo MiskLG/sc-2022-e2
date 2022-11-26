@@ -140,10 +140,15 @@ def combine_regions(regions_array):
 
         i += 1
 
+    average_size = 0
+    for gr in good_regions:
+        average_size += gr[1][2] * gr[1][3]
+    average_size = average_size/len(good_regions)
+
     i = 0
     br = []
     for gr in good_regions:
-        if gr[1][2] * gr[1][3] < 100:
+        if gr[1][2] * gr[1][3] < average_size/5:
             br.append(i)
         i += 1
     br = list(set(br))
@@ -183,6 +188,8 @@ def select_roi(image_bin,img_base):
         x, y, w, h = cv2.boundingRect(contour)
         xs.append(x+w/2)
         ys.append(y+h/2)
+    if len(xs) == 0 or len(ys) == 0:
+        return img_base, [], []
 
     reg = sklearn.linear_model.LinearRegression().fit(np.array(xs).reshape(-1, 1), np.array(ys))
     first = (0, reg.predict(np.array([0]).reshape(-1,1)))
@@ -241,7 +248,7 @@ def train_or_load_character_recognition_model(train_image_paths):
     """
     # probaj da ucitas prethodno istreniran model
     model = load_trained_ann()
-    #model = None
+    model = None
     if model is not None:
         return model
 
@@ -251,6 +258,15 @@ def train_or_load_character_recognition_model(train_image_paths):
         img = load_image(train_image_paths[i])
         imgs2.append(img)
         imgs.append(invert(image_bin(image_gray(img))))
+
+    if 'alphabet0.bmp' not in train_image_paths[0]:
+        swap = imgs[0]
+        imgs[0] = imgs[1]
+        imgs[1] = swap[0]
+
+        swap2 = imgs2[0]
+        imgs2[0] = imgs2[1]
+        imgs2[0] = swap2
 
     img1, letters1, region_distances1 = select_roi(imgs[0], imgs2[0])
     img2, letters2, region_distances2 = select_roi(imgs[1], imgs2[1])
@@ -326,7 +342,6 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     :return: <String>  Tekst procitan sa ulazne slike
     """
     extracted_text = "a"
-    # TODO - Izvuci tekst sa ulazne fotografije i vratiti ga kao string
 
     img_base = cv2.imread(image_path)
     img_base = cv2.cvtColor(img_base, cv2.COLOR_BGR2RGB)
@@ -335,6 +350,9 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     lista = get_most_prominent_colors(img_base, ranged)
     print(lista)
     print(image_path)
+    # TODO FUZZY WUZZY
+    # TODO RELATIVE SIZE CLEANSING
+    # TODO
     for i in range(0, len(lista)):
         img = create_bin_image_based_on_color(img_base, lista[i][0], ranged)
 
@@ -344,7 +362,7 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
 
         #img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
         selected_regions, letters, distances = select_roi(img,img_base)
-        if 20 < len(letters) < 150:
+        if 15 < len(letters) < 150:
             break
 
     print('Broj prepoznatih regiona:', len(letters))
@@ -354,8 +372,6 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
 
     k_means = KMeans(n_clusters=2, max_iter=2000, tol=0.00001, n_init=10)
     k_means.fit(distances)
-
-    #display_image(letters)
 
     alphabet = ['A', 'B', 'C', 'Č', 'Ć', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
                 'N', 'O', 'P', 'Q', 'R', 'S', 'Š', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Ž',
@@ -380,7 +396,6 @@ def get_most_prominent_colors(img_base, ranged):
                 dict1[tuplei] += 1
             else:
                 dict1.update({tuplei: 1})
-
 
     gray_noise_removed = remove_noise_from_color_list(dict1, 3)
     sorted_list = sorted(gray_noise_removed.items(), key=lambda x: x[1], reverse=False)
