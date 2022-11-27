@@ -6,6 +6,7 @@ import sklearn.linear_model
 os.environ['KERAS_BACKEND'] = 'theano'
 
 from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
 import cv2
 from matplotlib import pyplot as plt
 import numpy as np
@@ -459,12 +460,19 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
         avg = 0
         for text in extracted_text_list:
             best_value = 0
+            best_value_chance = 0
             best_match = ''
             for v in vocabulary.items():
                 temp = fuzz.ratio(text, v[0])
-                if best_value < temp / 100:
-                    best_value = temp / 100
+                if best_value < temp/100 - abs(len(text) - len(v[0]))/len(text):
+                    best_value = temp/100 - abs(len(text) - len(v[0]))/len(text)
                     best_match = v[0]
+                    best_value_chance = int(v[1])
+                elif best_value == temp/100 - abs(len(text) - len(v[0]))/len(text):
+                    if int(v[1]) > best_value_chance:
+                        best_value = temp / 100 - abs(len(text) - len(v[0])) / len(text)
+                        best_match = v[0]
+                        best_value_chance = int(v[1])
             ll.append(best_match)
             avg += best_value
         if (avg/len(extracted_text_list)) < 0.7:
