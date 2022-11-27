@@ -37,7 +37,7 @@ def erode(image):
     return cv2.erode(image, kernel, iterations=1)
 
 def resize_region(region):
-    resized = cv2.resize(region,(32,32), interpolation = cv2.INTER_NEAREST)
+    resized = cv2.resize(region,(28,28), interpolation = cv2.INTER_NEAREST)
     return resized
 
 
@@ -71,8 +71,8 @@ def create_ann():
     '''
     ann = Sequential()
     # Postaviti slojeve neurona mreže 'ann'
-    ann.add(Dense(500, input_dim=1024, activation='sigmoid'))
-    ann.add(Dense(200, activation='sigmoid'))
+    ann.add(Dense(360, input_dim=784, activation='sigmoid'))
+    ann.add(Dense(120, activation='sigmoid'))
     ann.add(Dense(60, activation='sigmoid'))
     return ann
 
@@ -86,7 +86,7 @@ def train_ann(ann, X_train, y_train):
     ann.compile(loss='mean_squared_error', optimizer=sgd)
 
     # obucavanje neuronske mreze
-    ann.fit(X_train, y_train, epochs=20000, batch_size=1, verbose=0, shuffle=True)
+    ann.fit(X_train, y_train, epochs=25000, batch_size=1, verbose=0, shuffle=True)
 
     return ann
 
@@ -117,56 +117,60 @@ def load_trained_ann():
 
 
 def combine_regions(regions_array):
-    #TODO fixes crashes on bad regions
-    # regions_array.remove(region2) is creating problems
     good_regions = copy.deepcopy(regions_array)
-    bad_regions = []
-    i = 0
-    for region in regions_array:
-        for region2 in regions_array:
+    br = []
+    m = 0
+    for i in range(0, len(regions_array)-1):
+        for j in range(i+1, len(regions_array)):
             # x11 <  x21 and x21 < x12   ## x2 is contained in x1
-            if region is not region2 and region[1][0] < region2[1][0] < region[1][0] + region[1][2] and region2[1][0] + abs((region2[1][0] - abs(region2[1][0] - region2[1][2])))/2 < region[1][0] + region[1][2]:
+            if regions_array[i][1][0] <= regions_array[j][1][0] <= regions_array[i][1][0] + regions_array[i][1][2] and regions_array[j][1][0] + abs((regions_array[j][1][0] - abs(regions_array[j][1][0] - regions_array[j][1][2])))/2 < regions_array[i][1][0] + regions_array[i][1][2]:
                 # height = height1 + height2 + difference between contures
                 # y1 = y2 - moving y point up
-                if region2[1][1] < region[1][1]:
-                    prvi = region
-                    drugi = region2
+                prvi = regions_array[i]
+                drugi = regions_array[j]
+
+                x = min(prvi[1][0], drugi[1][0])
+                y = min(prvi[1][1], drugi[1][1])
+                width = max(prvi[1][2], drugi[1][2])
+                if prvi[1][1] < drugi[1][1]:
+                    top = prvi[1][3]
                 else:
-                    prvi = region2
-                    drugi = region
+                    top = drugi[1][3]
+                height = prvi[1][3] + drugi[1][3] + np.abs(abs(prvi[1][1] - drugi[1][1]) - top)
+                good_regions[m][1] = (x, y, width, height)
+                br.append(m+1)
+        m += 1
 
-                region[1] = (prvi[1][0], drugi[1][1], prvi[1][2],
-                             prvi[1][3] + np.abs(prvi[1][1] - drugi[1][1] - drugi[1][3]) + drugi[1][3])
-                good_regions[i][1] = (prvi[1][0], prvi[1][1], prvi[1][2], prvi[1][3])
-
-        i += 1
+    br = list(set(br))
+    for b in sorted(br, reverse=True):
+        del good_regions[b]
 
     average_size = 0
     for gr in good_regions:
         average_size += gr[1][2] * gr[1][3]
-    average_size = average_size/len(good_regions)
+    if len(good_regions) != 0:
+        average_size = average_size/len(good_regions)
 
     i = 0
     br = []
     for gr in good_regions:
-        if gr[1][2] * gr[1][3] < average_size/5:
+        if gr[1][3]*gr[1][2] > average_size*4 or gr[1][3]*gr[1][2] < average_size/6:
             br.append(i)
         i += 1
     br = list(set(br))
     for b in sorted(br, reverse=True):
         del good_regions[b]
 
-    i = 0
-    br = []
-    for i in range(0, len(good_regions)-1):
-        for j in range(i+1, len(good_regions)):
-            if good_regions[i][1][0] == good_regions[j][1][0]:
-                br.append(i)
-
-    br = list(set(br))
-    print(br)
-    for b in sorted(br, reverse=True):
-        del good_regions[b]
+    # i = 0
+    # br = []
+    # for i in range(0, len(good_regions)-1):
+    #     for j in range(i+1, len(good_regions)):
+    #         if good_regions[i][1][0] == good_regions[j][1][0]:
+    #             br.append(i)
+    #
+    # br = list(set(br))
+    # for b in sorted(br, reverse=True):
+    #     del good_regions[b]
 
     return good_regions
 
@@ -175,15 +179,20 @@ def select_roi(image_bin,img_base):
     Funkcija kao u vežbi 2, iscrtava pravougaonike na originalnoj slici, pronalazi sortiran niz regiona sa slike,
     i dodatno treba da sačuva rastojanja između susednih regiona.
     '''
-    img, contours, hierarchy = cv2.findContours(image_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    img, contours, hierarchy = cv2.findContours(image_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     #Način određivanja kontura je promenjen na spoljašnje konture: cv2.RETR_EXTERNAL
-    regions_array = []
-
+    if len(contours) > 250:
+        print(len(contours))
+        print("yes")
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        image_bin = cv2.morphologyEx(image_bin.copy(), cv2.MORPH_OPEN, kernel, iterations=2)
+        img, contours, hierarchy = cv2.findContours(image_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        print(len(contours))
     contours2 = []
     xs = []
     ys = []
     for contour in contours:
-        if len(contour) < 10:
+        if len(contour) > 3000 or 15 > len(contour):
             continue
         contours2.append(contour)
         x, y, w, h = cv2.boundingRect(contour)
@@ -202,28 +211,86 @@ def select_roi(image_bin,img_base):
     h,w = image_bin.shape[:2]
     m = cv2.getRotationMatrix2D((w // 2, h // 2) , angle, 1.0)
     image_bin2 = cv2.warpAffine(image_bin, m, (w, h))
+    img_base2 = cv2.warpAffine(img_base, m, (w, h))
 
     show_image(image_bin2)
-    contours = contours2
+    img, contours, hierarchy = cv2.findContours(image_bin2.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    print(len(contours))
     i = 0
+    regions_array = []
     for contour in contours:
-        if len(contour) < 5:
+        if len(contour) < 15:
             continue
         x, y, w, h = cv2.boundingRect(contour)
-        region = image_bin[y:y+h+1, x:x+w+1]
-        regions_array.append([region, (x-1, y-1, w+2, h+2)])
+        region = image_bin2[y:y+h, x:x+w]
+        regions_array.append([region, (x, y, w, h)])
 
     # rotating picture based on the axis of the text
+    for r in regions_array:
+        x,y,w,h = r[1]
+        cv2.rectangle(img_base2, (x, y), (x + w, y + h), (0, 255, 0), 1)
+    show_image(img_base2)
 
     regions_array = sorted(regions_array, key=lambda item: item[1][0])
     # combining regions
     regions_array = combine_regions(regions_array)
     regions_array = [[resize_region(reg[0]), (reg[1][0], reg[1][1], reg[1][2], reg[1][3])] for reg in regions_array]
 
-    #for r in regions_array:
-        #x,y,w,h = r[1]
-        #cv2.rectangle(img_base, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    #show_image(img_base)
+    for r in regions_array:
+        x,y,w,h = r[1]
+        cv2.rectangle(img_base2, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    show_image(img_base2)
+
+    sorted_regions = [region[0] for region in regions_array]
+    sorted_rectangles = [region[1] for region in regions_array]
+    region_distances = []
+    # Izdvojiti sortirane parametre opisujućih pravougaonika
+    # Izračunati rastojanja između svih susednih regiona po x osi i dodati ih u region_distances niz
+    for index in range(0, len(sorted_rectangles)-1):
+        current = sorted_rectangles[index]
+        next_rect = sorted_rectangles[index+1]
+        distance = next_rect[0] - (current[0]+current[2]) #X_next - (X_current + W_current)
+        region_distances.append(distance)
+
+    return img_base2, sorted_regions, region_distances
+
+def training_select_roi(image_bin,img_base):
+    '''
+    Funkcija kao u vežbi 2, iscrtava pravougaonike na originalnoj slici, pronalazi sortiran niz regiona sa slike,
+    i dodatno treba da sačuva rastojanja između susednih regiona.
+    '''
+    img, contours, hierarchy = cv2.findContours(image_bin.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    #Način određivanja kontura je promenjen na spoljašnje konture: cv2.RETR_EXTERNAL
+    regions_array = []
+
+    contours2 = []
+    xs = []
+    ys = []
+    for contour in contours:
+        contours2.append(contour)
+        x, y, w, h = cv2.boundingRect(contour)
+        xs.append(x+w/2)
+        ys.append(y+h/2)
+    if len(xs) == 0 or len(ys) == 0:
+        return img_base, [], []
+
+    for contour in contours:
+        if len(contour) < 15:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        region = image_bin[y:y+h+1, x:x+w+1]
+        regions_array.append([region, (x, y, w, h)])
+
+    regions_array = sorted(regions_array, key=lambda item: item[1][0])
+    # combining regions
+    regions_array = combine_regions(regions_array)
+    regions_array = [[resize_region(reg[0]), (reg[1][0], reg[1][1], reg[1][2], reg[1][3])] for reg in regions_array]
+
+    for r in regions_array:
+        x,y,w,h = r[1]
+        cv2.rectangle(img_base, (x, y), (x + w-2, y + h-2), (0, 255, 0), 2)
+    show_image(img_base)
+
     sorted_regions = [region[0] for region in regions_array]
     sorted_rectangles = [region[1] for region in regions_array]
     region_distances = []
@@ -269,8 +336,8 @@ def train_or_load_character_recognition_model(train_image_paths):
         imgs2[0] = imgs2[1]
         imgs2[0] = swap2
 
-    img1, letters1, region_distances1 = select_roi(imgs[0], imgs2[0])
-    img2, letters2, region_distances2 = select_roi(imgs[1], imgs2[1])
+    img1, letters1, region_distances1 = training_select_roi(imgs[0], imgs2[0])
+    img2, letters2, region_distances2 = training_select_roi(imgs[1], imgs2[1])
 
     show_image(img1)
 
@@ -348,56 +415,70 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
     img_base = cv2.cvtColor(img_base, cv2.COLOR_BGR2RGB)
     # fine-tuning practically
     ranged = 19
+    print(image_path)
     lista = get_most_prominent_colors(img_base, ranged)
     print(lista)
-    print(image_path)
-    # TODO FUZZY WUZZY
-    # TODO RELATIVE SIZE CLEANSING
-    # TODO
+
+    # TODO FIX IMAGES WITH CITY AND OTHER TRASH
+    ll = []
     for i in range(0, len(lista)):
+        print("Cycle " + str(i) + "/" + str(len(lista)))
         img = create_bin_image_based_on_color(img_base, lista[i][0], ranged)
 
         img = img_to_binary(img)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
-
         #img = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
-        selected_regions, letters, distances = select_roi(img,img_base)
-        if 15 < len(letters) < 150:
+        #img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel, iterations=1)
+        selected_regions, letters, distances = select_roi(img, img_base)
+        if len(distances) < 2 or len(letters) < 5:
+            continue
+        distances = np.array(distances).reshape(len(distances), 1)
+        # Neophodno je da u K-means algoritam bude prosleđena matrica u kojoj vrste određuju elemente
+
+        k_means = KMeans(n_clusters=2, max_iter=2000, tol=0.00001, n_init=10)
+        k_means.fit(distances)
+
+        alphabet = ['A', 'B', 'C', 'Č', 'Ć', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+                    'N', 'O', 'P', 'Q', 'R', 'S', 'Š', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Ž',
+                    'a', 'b', 'c', 'č', 'ć', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+                    'n', 'o', 'p', 'q', 'r', 's', 'š', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'ž']
+
+        inputs = prepare_for_ann(letters)
+        results = trained_model.predict(np.array(inputs, np.float32))
+        extracted_text = (display_result(results, alphabet, k_means))
+
+        extracted_text_list = extracted_text.split(" ")
+        if len(extracted_text_list) > 50:
+            print("scream")
+            print(len(extracted_text_list))
+            continue
+        ll = []
+        worst_value = False
+        avg = 0
+        for text in extracted_text_list:
+            best_value = 0
+            best_match = ''
+            for v in vocabulary.items():
+                temp = fuzz.ratio(text, v[0])
+                if best_value < temp / 100:
+                    best_value = temp / 100
+                    best_match = v[0]
+            ll.append(best_match)
+            avg += best_value
+        if (avg/len(extracted_text_list)) < 0.7:
+            print(extracted_text)
+            print("aaaaaa")
+            worst_value = True
+        print(" avg "+ str(avg/ len(extracted_text_list)))
+        if worst_value is False:
             break
 
     print('Broj prepoznatih regiona:', len(letters))
 
-    distances = np.array(distances).reshape(len(distances), 1)
-    # Neophodno je da u K-means algoritam bude prosleđena matrica u kojoj vrste određuju elemente
 
-    k_means = KMeans(n_clusters=2, max_iter=2000, tol=0.00001, n_init=10)
-    k_means.fit(distances)
-
-    alphabet = ['A', 'B', 'C', 'Č', 'Ć', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-                'N', 'O', 'P', 'Q', 'R', 'S', 'Š', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'Ž',
-                'a', 'b', 'c', 'č', 'ć', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-                'n', 'o', 'p', 'q', 'r', 's', 'š', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'ž']
-
-    inputs = prepare_for_ann(letters)
-    results = trained_model.predict(np.array(inputs, np.float32))
-    extracted_text = (display_result(results, alphabet, k_means))
+    #TODO IMPLEMENT FUZZYWYZZY WITH CUSTOM COSTS
 
 
-    extracted_text_list = extracted_text.split(" ")
-    all_values = 0
-    for v in vocabulary.values():
-        all_values += int(v)
-    ll = []
-    for text in extracted_text_list:
-        best_value = 0
-        best_match = ''
-        for v in vocabulary.items():
-            temp = fuzz.ratio(text, v[0])
-            if best_value < temp/all_values:
-                best_value = temp/all_values
-                best_match = v[0]
-        ll.append(best_match)
 
     extracted_text2 = ''
     for t in ll:
@@ -419,7 +500,7 @@ def get_most_prominent_colors(img_base, ranged):
             else:
                 dict1.update({tuplei: 1})
 
-    gray_noise_removed = remove_noise_from_color_list(dict1, 3)
+    gray_noise_removed = remove_noise_from_color_list(dict1, 1)
     sorted_list = sorted(gray_noise_removed.items(), key=lambda x: x[1], reverse=False)
     sorted_dict = {}
     for item in sorted_list:
@@ -433,18 +514,18 @@ def get_most_prominent_colors(img_base, ranged):
         sorted_dict.update({item[0]: item[1]})
 
     color_noise_removed = remove_noise_from_text(sorted_dict, ranged)
+    sorted_list = sorted(color_noise_removed, key=lambda x: x[1], reverse=False)
     sorted_dict = {}
-    for item in list_to_return:
-        sorted_dict.update({item[0]: item[1]})
-    sorted_list = sorted(sorted_dict.items(), key=lambda x: x[1], reverse=False)
-    sorted_dict = {}
+
     for item in sorted_list:
         sorted_dict.update({item[0]: item[1]})
     list_to_return = []
-    for m in range(0, 20):
+    for m in range(0,len(sorted_dict)):
+        if m > 20:
+            break
         list_to_return.append(sorted_dict.popitem())
 
-    return color_noise_removed
+    return list_to_return
 
 
 def remove_noise_from_text(color_dict, rangeb):
@@ -470,22 +551,22 @@ def remove_noise_from_color_list(color_list, split_number):
     step_list = []
     for i in range(0, split_number+1):
         step_list.append(round(255-i*step))
-    print(step_list)
     list_to_do = []
     for item in color_list.items():
         if item[0][0] == item[0][1] == item[0][2]:
             for i in range(0, split_number+1):
-                if 1 + round(step / 2) + step_list[i] > item[0][0] > step_list[i] - round(step / 2) - 1:
+                if round(step / 2) + step_list[i] > item[0][0] > step_list[i] - round(step / 2):
                     list_to_do.append((item[0], item[1], step_list[i]))
 
     for item in list_to_do:
-        color_list.pop(item[0])
         if (item[2], item[2], item[2]) in color_list:
             a = 0
-            #color_list[(item[2], item[2], item[2])] += item[1]
+            color_list[(item[2], item[2], item[2])] += item[1]
+            color_list.pop(item[0])
         else:
             a = 0
-            #color_list.update({(item[2], item[2], item[2]): item[1]})
+            color_list.update({(item[2], item[2], item[2]): item[1]})
+            color_list.pop(item[0])
 
     return color_list
 
