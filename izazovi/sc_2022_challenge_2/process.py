@@ -154,7 +154,7 @@ def combine_regions(regions_array):
     i = 0
     br = []
     for gr in good_regions:
-        if gr[1][3]*gr[1][2] > average_size*4 or gr[1][3]*gr[1][2] < average_size/6:
+        if gr[1][3]*gr[1][2] < average_size/6:
             br.append(i)
         i += 1
     br = list(set(br))
@@ -211,10 +211,13 @@ def select_roi(image_bin,img_base):
     h,w = image_bin.shape[:2]
     m = cv2.getRotationMatrix2D((w // 2, h // 2) , angle, 1.0)
     image_bin2 = cv2.warpAffine(image_bin, m, (w, h))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
+    image_bin3 = cv2.erode(image_bin2.copy(), kernel, iterations=1)
     img_base2 = cv2.warpAffine(img_base, m, (w, h))
 
     show_image(image_bin2)
-    img, contours, hierarchy = cv2.findContours(image_bin2.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    show_image(image_bin3)
+    img, contours, hierarchy = cv2.findContours(image_bin3.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     print(len(contours))
     i = 0
     regions_array = []
@@ -434,7 +437,6 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
             continue
         distances = np.array(distances).reshape(len(distances), 1)
         # Neophodno je da u K-means algoritam bude prosleđena matrica u kojoj vrste određuju elemente
-
         k_means = KMeans(n_clusters=2, max_iter=2000, tol=0.00001, n_init=10)
         k_means.fit(distances)
 
@@ -521,7 +523,7 @@ def get_most_prominent_colors(img_base, ranged):
         sorted_dict.update({item[0]: item[1]})
     list_to_return = []
     for m in range(0,len(sorted_dict)):
-        if m > 20:
+        if m > 30:
             break
         list_to_return.append(sorted_dict.popitem())
 
