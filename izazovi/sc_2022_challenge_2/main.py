@@ -34,6 +34,12 @@ with open(VOCABULARY_PATH, 'r', encoding='utf-8') as file:
 processed_image_names = []
 extracted_text = []
 
+#extracted_text.append(extract_text_from_image(model, '.'+os.path.sep+'dataset'+os.path.sep+'train'+os.path.sep + 'alphabet0.bmp', vocabulary))
+#extracted_text.append(extract_text_from_image(model, '.'+os.path.sep+'dataset'+os.path.sep+'train'+os.path.sep + 'alphabet1.bmp', vocabulary))
+#extracted_text.append(extract_text_from_image(model, '.'+os.path.sep+'dataset'+os.path.sep+'validation'+os.path.sep+ 'train39.bmp', vocabulary))
+#extracted_text.append(extract_text_from_image(model, '.'+os.path.sep+'dataset'+os.path.sep+'validation'+os.path.sep+ 'train0.bmp', vocabulary))
+
+
 for image_path in glob.glob(VALIDATION_DATASET_PATH + "*.bmp"):
     image_directory, image_name = os.path.split(image_path)
     processed_image_names.append(image_name)

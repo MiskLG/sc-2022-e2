@@ -72,8 +72,8 @@ def create_ann():
     '''
     ann = Sequential()
     # Postaviti slojeve neurona mreže 'ann'
-    ann.add(Dense(360, input_dim=784, activation='sigmoid'))
-    ann.add(Dense(120, activation='sigmoid'))
+    ann.add(Dense(400, input_dim=784, activation='sigmoid'))
+    ann.add(Dense(180, activation='sigmoid'))
     ann.add(Dense(60, activation='sigmoid'))
     return ann
 
@@ -212,8 +212,8 @@ def select_roi(image_bin,img_base):
     h,w = image_bin.shape[:2]
     m = cv2.getRotationMatrix2D((w // 2, h // 2) , angle, 1.0)
     image_bin2 = cv2.warpAffine(image_bin, m, (w, h))
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 3))
-    image_bin3 = cv2.erode(image_bin2.copy(), kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    image_bin3 = cv2.erode(image_bin2.copy(), kernel, iterations=2)
     img_base2 = cv2.warpAffine(img_base, m, (w, h))
 
     show_image(image_bin2)
@@ -398,6 +398,42 @@ def display_result(outputs, alphabet, k_means):
         result += alphabet[winner(output)]
     return result
 
+
+def has_commonly_mixed_chars(text, param):
+    mix_file = []
+    mix_file.append(('Q', 'a'))
+    mix_file.append(('i', 'l'))
+    mix_file.append(('s', 'š'))
+    mix_file.append(('c', 'ć'))
+    mix_file.append(('c', 'č'))
+    mix_file.append(('ć', 'č'))
+    mix_file.append(('z', 'ž'))
+    mix_file.append(('z', 'Z'))
+    mix_file.append(('x', 'X'))
+    mix_file.append(('Ž', 'ž'))
+    mix_file.append(('C', 'c'))
+    mix_file.append(('Ć', 'ć'))
+    mix_file.append(('Č', 'č'))
+
+    total_value = 0
+    for i in range(0, len(mix_file)):
+
+        i2 = text.find(mix_file[i][0])
+        if i2 != -1:
+            i1 = param.find(mix_file[i][1])
+            if i1 != -1:
+                if i1 == i2:
+                    total_value += 1
+        i2 = text.find(mix_file[i][1])
+        if i2 != -1:
+            i1 = param.find(mix_file[i][0])
+            if i1 != -1:
+                if i1 == i2:
+                    total_value += 1
+
+    return total_value
+
+
 def extract_text_from_image(trained_model, image_path, vocabulary):
     """
     Procedura prima objekat istreniranog modela za prepoznavanje znakova (karaktera), putanju do fotografije na kojoj
@@ -469,10 +505,14 @@ def extract_text_from_image(trained_model, image_path, vocabulary):
                     best_match = v[0]
                     best_value_chance = int(v[1])
                 elif best_value == temp/100 - abs(len(text) - len(v[0]))/len(text):
-                    if int(v[1]) > best_value_chance:
+                    idk1 = has_commonly_mixed_chars(text, v[0])
+                    idk2 = has_commonly_mixed_chars(text, best_match)
+                    if int(v[1]) + idk1*100 > best_value_chance+idk2*100:
                         best_value = temp / 100 - abs(len(text) - len(v[0])) / len(text)
                         best_match = v[0]
                         best_value_chance = int(v[1])
+            if best_value < 0:
+                best_value = 0
             ll.append(best_match)
             avg += best_value
         if (avg/len(extracted_text_list)) < 0.7:

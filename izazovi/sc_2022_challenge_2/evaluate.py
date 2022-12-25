@@ -48,10 +48,14 @@ def jaccard_similarity(string_1, string_2):
 
 # evaluate how results file matches the labelled samples
 similarities = []
+i = 0
 for labeled_image_name in labeled_samples:
+    if i > 101:
+        i += 1
+        continue
     similarity = jaccard_similarity(labeled_samples[labeled_image_name], results[labeled_image_name])
     similarities.append(similarity*100)
-
+    i += 1
 percentage = statistics.mean(similarities)
 
 print("%.2f" % percentage)
