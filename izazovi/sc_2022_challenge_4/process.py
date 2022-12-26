@@ -1,8 +1,9 @@
 # import libraries here
+import re
+
 from imutils import face_utils
 import numpy as np
 import argparse
-import imutils
 import dlib
 from matplotlib import pyplot as plt
 import os
@@ -48,11 +49,11 @@ class Person:
                 y = t.find('<',x)
                 if x == -1 or y == -1:
                     break
-                self.name = t[x+3:y]
+                self.surname = t[x+3:y]
                 z = t.find('<',y+2)
                 if z == -1:
                     break
-                self.surname = t[y+1: z]
+                self.name = t[y+2: z]
                 first = False
             else:
                 x = t.find('SRB')
@@ -104,22 +105,36 @@ def extract_information_from_image(image_path) -> Person:
 
     #test(image_path)
 
+    tools = pyocr.get_available_tools()
+    if len(tools) == 0:
+        print("No OCR tool found")
+        sys.exit(1)
+
+    # odaberemo Tessract - prvi na listi ako je jedini alat
+
+
     # ucitavanje i transformacija slike
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     screen = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
-    #img = face_alignment(image_path)
-    #plt.imshow(img, 'gray')
-    #plt.show()
-
     # detekcija svih lica na grayscale slici
-    faces = face_cascade.detectMultiScale(screen, 1.35, 5)
+    detector = dlib.get_frontal_face_detector()
+    faces = detector(image)
+    #faces = face_cascade.detectMultiScale(screen, 1.35, 5)
     print("End")
-
+    print(faces)
+    print(faces[0])
+    print(face_utils.rect_to_bb(faces[0]))
+    #cv2.rectangle(image, faces, 2)
+    show_img(image)
     new_img = image
+
+    (x, y, w, h) = face_utils.rect_to_bb(faces[0])
+    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 127, 255), 2)
+    show_img(image)
     # iteriramo kroz sve detekcije korak 1.
-    for (x, y, w, h) in faces:
+    for (x, y, w, h) in face_utils.rect_to_bb(faces[0]):
         print(x, y, w, h)
         # filtering small imange if it gets caught first
         if w < 150:
@@ -132,10 +147,6 @@ def extract_information_from_image(image_path) -> Person:
         for (ex, ey, ew, eh) in eyes:
             cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 127, 255), 2)
 
-        #   plt.imshow(roi_color, 'gray')
-        #   plt.imshow(processed_img, 'gray')
-        #   plt.imshow(img, 'gray')
-        #   plt.show()
 
         if len(eyes) >= 2:
             eye = eyes[:, 2]
@@ -208,10 +219,6 @@ def extract_information_from_image(image_path) -> Person:
             new_img = image
             h, w = new_img.shape[:2]
             print(h, w, angle)
-            plt.imshow(new_img, 'gray')
-            #   plt.imshow(processed_img, 'gray')
-            #   plt.imshow(img, 'gray')
-            #   plt.show()
             m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
             new_img = cv2.warpAffine(image, m, (w, h))
         break
@@ -219,6 +226,7 @@ def extract_information_from_image(image_path) -> Person:
     print("part 2")
     faces = face_cascade.detectMultiScale(new_img, 1.35, 5)
     roi_gray = new_img
+    show_img_gray(roi_gray)
     # iteriramo kroz sve detekcije korak 1.
     for (x, y, w, h) in faces:
         print(x, y, w, h)
@@ -242,6 +250,7 @@ def extract_information_from_image(image_path) -> Person:
             wmin = 0
         roi_gray = new_img[y + h + 100:h_max_crr, wmin:w_max_crr]
 
+    show_img(roi_gray)
 
     # find biggest conture
     # find angle
@@ -264,10 +273,22 @@ def extract_information_from_image(image_path) -> Person:
     # biramo jezik očekivanog teksta
     lang = 'eng'
 
+    builder = pyocr.builders.TextBuilder()
+    builder.tesseract_layout = 10
+    #self.tesseract_configs = ["-c", "tessedit_char_whitelist=0123456789ABNOPRSTUVYZXW"] + self.tesseract_configs
+    builder.tesseract_flags = []
+    builder.tesseract_flags.append(r"--psm")
+    builder.tesseract_flags.append(r"11")
+
+    builder.tesseract_flags.append(r"-c")
+    builder.tesseract_flags.append(r"tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPRSTUVZ<")
+    print(builder.tesseract_configs)
+    print(builder.tesseract_flags)
+    #builder.tesseract_configs.append(r"digits")
     text = tool.image_to_string(
         Image.fromarray(roi_gray),
         lang=lang,
-        builder=pyocr.builders.TextBuilder(tesseract_layout=3)  # izbor segmentacije (PSM)
+        builder=builder
     )
 
     person.fit(text)
@@ -435,3 +456,12 @@ def face_alignment(img_path):
         print("asdadsasdads")
         print(angle)
     return new_img
+
+def show_img_gray(img):
+    plt.imshow(img,'gray')
+    plt.show()
+
+def show_img(img):
+    plt.imshow(img)
+    plt.show()
+
