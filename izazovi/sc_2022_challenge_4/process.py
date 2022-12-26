@@ -1,33 +1,22 @@
 # import libraries here
-import re
 
-from imutils import face_utils
-import numpy as np
-import argparse
-import dlib
-from matplotlib import pyplot as plt
-import os
-import cv2
-import math
-import matplotlib.pyplot as pl
-import pandas as pd
-import numpy as np
-import cv2
-from PIL import Image
 import sys
 
+import cv2
+import dlib
+import matplotlib.pyplot as plt
 import pyocr
 import pyocr.builders
-
-import matplotlib
-import matplotlib.pyplot as plt
+from PIL import Image
+from imutils import face_utils
 
 
 class Person:
     """
     Klasa koja opisuje prepoznatu osobu sa slike. Neophodno je prepoznati samo vrednosti koje su opisane u ovoj klasi
     """
-    def __init__(self, birth_date: str, expiry_date: str, gender: str, name: str, surname: str,number: str):
+
+    def __init__(self, birth_date: str, expiry_date: str, gender: str, name: str, surname: str, number: str):
         self.birth_date = birth_date
         self.expiry_date = expiry_date
         self.gender = gender
@@ -36,6 +25,7 @@ class Person:
         self.number = number
 
     def fit(self, text):
+        # TODO add filtering for single text and return best thingy
         text_list = text.splitlines()
         print(text_list)
         if len(text_list) < 2:
@@ -46,14 +36,14 @@ class Person:
                 continue
             if first:
                 x = t.find('SRB')
-                y = t.find('<',x)
+                y = t.find('<', x)
                 if x == -1 or y == -1:
                     break
-                self.surname = t[x+3:y]
-                z = t.find('<',y+2)
+                self.surname = t[x + 3:y]
+                z = t.find('<', y + 2)
                 if z == -1:
                     break
-                self.name = t[y+2: z]
+                self.name = t[y + 2: z]
                 first = False
             else:
                 x = t.find('SRB')
@@ -71,18 +61,79 @@ class Person:
                         break
                 else:
                     self.gender = 'F'
-                temp = t[x+3:x+3+6]
+                temp = t[x + 3:x + 3 + 6]
                 self.birth_date = self.format_date(temp, "19")
 
-                temp = t[y+1: y+1+6]
+                temp = t[y + 1: y + 1 + 6]
                 self.expiry_date = self.format_date(temp, "20")
-                break;
+                break
         return self
+
+    def fit2(self, text):
+        value = 0
+        first_line = text.find('SRB')
+        if first_line == -1:
+            first_line = text.find('8RB')
+            if first_line == -1:
+                return value
+        # can extract name and last name probably
+        value += 1  # value = 1
+        second_line = text.find('SRB', first_line + 3)
+        if second_line == -1:
+            second_line = text.find('8RB', first_line + 3)
+            if second_line == -1:
+                return value
+        # can extract data somehow
+        value += 1  # value = 2
+        print("passed")
+
+        surname_end = text.find('<', first_line + 3)
+        if surname_end != -1:
+            value += 1  # value = 3
+        self.surname = text[first_line + 3:surname_end]
+        if len(self.surname) < 16:
+            value += 1  # v = 4
+        name_end = text.find('<', surname_end + 2)  # usually there should be 2
+        if name_end != -1:
+            value += 1
+        self.name = text[surname_end + 2: name_end]
+        if len(self.name) < 12:
+            value += 1  # value = 5
+
+        crr = second_line - 10
+        if crr < 0:
+            crr = 0
+        self.number = text[crr:second_line]
+        if self.number.isdigit():
+            value += 1  # value = 6
+
+        gender = text.find('F', second_line + 3)
+        if gender == -1:
+            self.gender = 'M'
+            gender = text.find('M', second_line + 3)
+            if gender != -1:
+                value += 1  # v =7
+        else:
+            self.gender = 'F'
+            value += 1  # value = 7
+
+        temp = text[second_line + 3:second_line + 3 + 6]
+        self.birth_date = self.format_date(temp, "19")
+        if temp.isdigit():
+            value += 1  # value = 8
+
+        temp = text[gender + 1: gender + 1 + 6]
+        self.expiry_date = self.format_date(temp, "20")
+        if temp.isdigit():
+            value += 1  # value = 9
+        return value
+
     def format_date(self, date, type):
-        year = str(""+type + date[:2])
+        year = str("" + type + date[:2])
         month = date[2:4]
         day = date[4:6]
         return day + "." + month + "." + year
+
 
 def extract_information_from_image(image_path) -> Person:
     """
@@ -96,14 +147,22 @@ def extract_information_from_image(image_path) -> Person:
     person = Person(None, None, None, None, None, None)
     # TODO - Prepoznati sve podatke o osobi sa fotografije pasosa (datum rodjenja, datum isteka pasosa, pol (M/F), ime, prezime, broj pasosa)
     # inicijalizaclija dlib detektora (HOG)
+    tools = pyocr.get_available_tools()
+    if len(tools) == 0:
+        print("No OCR tool found")
+        sys.exit(1)
+    # odaberemo Tessract - prvi na listi ako je jedini alat
+    tool = tools[0]
+    print("Koristimo backend: %s" % (tool.get_name()))
+    # biramo jezik očekivanog teksta
+    lang = 'eng'
+
     detector = dlib.get_frontal_face_detector()
+
     # ucitavanje pretreniranog modela za prepoznavanje karakteristicnih tacaka
     # predictor = dlib.shape_predictor('haarcascade_frontalface_default.xml')
     print("Start")
-    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
-
-    #test(image_path)
+    # test(image_path)
 
     tools = pyocr.get_available_tools()
     if len(tools) == 0:
@@ -111,7 +170,6 @@ def extract_information_from_image(image_path) -> Person:
         sys.exit(1)
 
     # odaberemo Tessract - prvi na listi ako je jedini alat
-
 
     # ucitavanje i transformacija slike
     image = cv2.imread(image_path)
@@ -121,223 +179,131 @@ def extract_information_from_image(image_path) -> Person:
     # detekcija svih lica na grayscale slici
     detector = dlib.get_frontal_face_detector()
     faces = detector(image)
-    #faces = face_cascade.detectMultiScale(screen, 1.35, 5)
-    print("End")
-    print(faces)
-    print(faces[0])
-    print(face_utils.rect_to_bb(faces[0]))
-    #cv2.rectangle(image, faces, 2)
-    show_img(image)
     new_img = image
 
-    (x, y, w, h) = face_utils.rect_to_bb(faces[0])
-    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 127, 255), 2)
     show_img(image)
+    (x, y, w, h) = (0, 0, 0, 0)
     # iteriramo kroz sve detekcije korak 1.
-    for (x, y, w, h) in face_utils.rect_to_bb(faces[0]):
+    for f in faces:
+        (x, y, w, h) = face_utils.rect_to_bb(f)
         print(x, y, w, h)
         # filtering small imange if it gets caught first
-        if w < 150:
+        if w < 200:
             continue
-        roi_color = screen[y:y + h, x:x + w]
 
-        img = screen[y:y + h, x:x + w]
-        eyes = eye_cascade.detectMultiScale(img)
+    # no faces no program
+    if x == 0 and y == 0 and w == 0 and h == 0:
+        return person
 
-        for (ex, ey, ew, eh) in eyes:
-            cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 127, 255), 2)
+    # cv2.rectangle(new_img, (x - 200, y + h + 100), (x + 1700, y + h + 500), (255, 255, 0), 2)
+    hmax, wmax = new_img.shape[:2]
+    h_max_crr = y + h + 500
+    w_max_crr = x + 1700
 
+    print(hmax, wmax)
+    print(h_max_crr, w_max_crr)
 
-        if len(eyes) >= 2:
-            eye = eyes[:, 2]
-            container1 = []
-            for i in range(0, len(eyes)):
-                container = (eyes[i][0] * eyes[i][1], i)
-                container1.append(container)
-            df = pd.DataFrame(container1, columns=[
-                "length", "idx"]).sort_values(by=['length'])
-            eyes = eyes[df.idx.values[0:2]]
+    if h_max_crr > hmax:
+        h_max_crr = h_max_crr
+    if w_max_crr > wmax:
+        w_max_crr = wmax
+    wmin = x - 200
+    if wmin < 0:
+        wmin = 0
+    roi_gray = new_img[y + h + 100:h_max_crr, wmin:w_max_crr]
 
-            # deciding to choose left and right eye
-            eye_1 = eyes[0]
-            eye_2 = eyes[1]
-            if eye_1[0] > eye_2[0]:
-                left_eye = eye_2
-                right_eye = eye_1
-            else:
-                left_eye = eye_1
-                right_eye = eye_2
-
-            # center of eyes
-            # center of right eye
-            right_eye_center = (
-                int(right_eye[0] + (right_eye[2] / 2)),
-                int(right_eye[1] + (right_eye[3] / 2)))
-            right_eye_x = right_eye_center[0]
-            right_eye_y = right_eye_center[1]
-            cv2.circle(img, right_eye_center, 2, (255, 0, 0), 3)
-
-            # center of left eye
-            left_eye_center = (
-                int(left_eye[0] + (left_eye[2] / 2)),
-                int(left_eye[1] + (left_eye[3] / 2)))
-            left_eye_x = left_eye_center[0]
-            left_eye_y = left_eye_center[1]
-            cv2.circle(img, left_eye_center, 2, (255, 0, 0), 3)
-
-            # finding rotation direction
-            if left_eye_y > right_eye_y:
-                print("Rotate image to clock direction")
-                point_3rd = (right_eye_x, left_eye_y)
-                direction = -1  # rotate image direction to clock
-            else:
-                print("Rotate to inverse clock direction")
-                point_3rd = (right_eye_x, left_eye_y)
-                direction = 1  # rotate inverse direction of clock
-
-            cv2.circle(img, point_3rd, 2, (255, 0, 0), 2)
-            a = trignometry_for_distance(left_eye_center,
-                                         point_3rd)
-            b = trignometry_for_distance(right_eye_center,
-                                         point_3rd)
-            c = trignometry_for_distance(right_eye_center,
-                                         left_eye_center)
-            # fix dividing by zero
-            if 2*b*c == 0:
-                c = 1
-                b = 1
-            cos_a = (b * b + c * c - a * a) / (2 * b * c)
-            angle = (np.arccos(cos_a) * 180) / math.pi
-
-            if direction == -1:
-                angle = 90 - angle
-            else:
-                angle = -(90 - angle)
-
-            angle = -angle
-            # rotate image
-            new_img = image
-            h, w = new_img.shape[:2]
-            print(h, w, angle)
-            m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-            new_img = cv2.warpAffine(image, m, (w, h))
-        break
-
-    print("part 2")
-    faces = face_cascade.detectMultiScale(new_img, 1.35, 5)
-    roi_gray = new_img
-    show_img_gray(roi_gray)
-    # iteriramo kroz sve detekcije korak 1.
-    for (x, y, w, h) in faces:
-        print(x, y, w, h)
-        # filtering small imange if it gets caught first
-        if w < 150:
-            continue
-        cv2.rectangle(new_img , (x - 200, y + h + 100), (x + 1700, y + h + 500), (255, 255, 0), 2)
-        hmax, wmax = new_img.shape[:2]
-        h_max_crr = y + h + 500
-        w_max_crr = x + 1700
-
-        print(hmax, wmax)
-        print(h_max_crr, w_max_crr)
-
-        if h_max_crr > hmax:
-            h_max_crr = h_max_crr
-        if w_max_crr > wmax:
-            w_max_crr = wmax
-        wmin = x-200
-        if wmin < 0:
-            wmin = 0
-        roi_gray = new_img[y + h + 100:h_max_crr, wmin:w_max_crr]
-
-    show_img(roi_gray)
-
-    # find biggest conture
-    # find angle
-    # rotate
-    # repeat
-
-    #   plt.imshow(roi_gray, 'gray')
-    #   plt.imshow(processed_img, 'gray')
-    #   plt.imshow(img, 'gray')
-    #   plt.show()
-
-    tools = pyocr.get_available_tools()
-    if len(tools) == 0:
-        print("No OCR tool found")
-        sys.exit(1)
-
-    # odaberemo Tessract - prvi na listi ako je jedini alat
-    tool = tools[0]
-    print("Koristimo backend: %s" % (tool.get_name()))
-    # biramo jezik očekivanog teksta
-    lang = 'eng'
-
-    builder = pyocr.builders.TextBuilder()
-    builder.tesseract_layout = 10
-    #self.tesseract_configs = ["-c", "tessedit_char_whitelist=0123456789ABNOPRSTUVYZXW"] + self.tesseract_configs
+    builder = pyocr.builders.WordBoxBuilder()
     builder.tesseract_flags = []
     builder.tesseract_flags.append(r"--psm")
     builder.tesseract_flags.append(r"11")
 
     builder.tesseract_flags.append(r"-c")
     builder.tesseract_flags.append(r"tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPRSTUVZ<")
-    print(builder.tesseract_configs)
-    print(builder.tesseract_flags)
-    #builder.tesseract_configs.append(r"digits")
+
     text = tool.image_to_string(
         Image.fromarray(roi_gray),
         lang=lang,
         builder=builder
     )
 
-    person.fit(text)
+    angle = -10
+    ba = 100
+    bt = 100
+    bv = 0
+    btt = 0
+    for i in range(0, 40):
+        h, w = image.shape[:2]
+        m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+        new_img = cv2.warpAffine(image, m, (w, h))
+        faces = detector(new_img)
+        x = 0
+        y = 0
+        w = 0
+        h = 0
+        for f in faces:
+            (x2, y2, w2, h2) = face_utils.rect_to_bb(f)
+            if w2 < 200:
+                continue
+            else:
+                x = x2
+                y = y2
+                w = w2
+                h = h2
+                break
+
+        # no faces no program
+        if x == 0 and y == 0 and w == 0 and h == 0:
+            continue
+        hmax, wmax = new_img.shape[:2]
+        h_max_crr = y + h + 500
+        w_max_crr = x + 1700
+        h_min_crr = y + h + 100
+
+        if h_max_crr > hmax:
+            h_max_crr = h_max_crr
+        if w_max_crr > wmax:
+            w_max_crr = wmax
+        if h_min_crr > hmax:
+            h_min_crr = hmax
+        wmin = x - 200
+        if wmin < 0:
+            wmin = 0
+        roi_gray = new_img[h_min_crr:h_max_crr, wmin:w_max_crr]
+        angle += 0.5
+        text = tool.image_to_string(
+            Image.fromarray(roi_gray),
+            lang=lang,
+            builder=builder
+        )
+        if bt > len(text) >= 2:
+            text_whole = ""
+            for i in range(0, len(text)):
+                text_whole += text[i].content
+            ptemp = Person(None, None, None, None, None, None)
+            value = ptemp.fit2(text_whole)
+            print(text_whole)
+            ba = angle
+            bt = len(text)
+            print(value)
+            if bv <= value:
+                bv = value
+                person = ptemp
+            if value == 10:
+                break
+
+    print(btt)
+    print(ba)
+    h, w = image.shape[:2]
+    m = cv2.getRotationMatrix2D((w // 2, h // 2), ba, 1.0)
+    new_img = cv2.warpAffine(image, m, (w, h))
+    show_img(new_img)
+
     print(person.expiry_date)
     print(person.birth_date)
     print(person.name)
 
     return person
 
-def test(image_path):
-    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
-
-    # ucitavanje i transformacija slike
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    screen = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # detekcija svih lica na grayscale slici
-    faces = face_cascade.detectMultiScale(screen, 1.35, 5)
-    # iteriramo kroz sve detekcije korak 1.
-    for (x, y, w, h) in faces:
-
-        cv2.rectangle(screen, (x, y), (x+w, y+h), (255, 255, 0), 2)
-        roi_gray = screen[y:y + h, x:x + w]
-        roi_color = screen[y:y + h, x:x + w]
-        bin = get_binary_image(roi_gray)
-
-        eyes = eye_cascade.detectMultiScale(roi_gray)
-
-        # finding the largest pair of
-        # eyes in the image
-        if len(eyes) >= 2:
-            eye = eyes[:, 2]
-            container1 = []
-            for i in range(0, len(eye)):
-                container = (eye[i], i)
-                container1.append(container)
-            df = pd.DataFrame(container1, columns=[
-                "length", "idx"]).sort_values(by=['length'])
-            eyes = eyes[df.idx.values[0:2]]
-
-
-        for (ex, ey, ew, eh) in eyes:
-            cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 127, 255), 2)
-        break
-
-    plt.imshow(screen, 'gray')
-    plt.show()
 
 def image_bin(image_gs):
     ret, image_bin = cv2.threshold(image_gs, 30, 255, cv2.THRESH_BINARY_INV)
@@ -345,123 +311,20 @@ def image_bin(image_gs):
 
 
 def get_binary_image(img_base):
-    #image_ada = cv2.GaussianBlur(image_ada, (11, 11), 5)
+    # image_ada = cv2.GaussianBlur(image_ada, (11, 11), 5)
     image_ada_bin = cv2.adaptiveThreshold(img_base, 255, cv2.CALIB_CB_ADAPTIVE_THRESH, cv2.THRESH_BINARY_INV, 251, 1)
     return image_ada_bin
 
+
 def invert(image):
-    return 255-image
+    return 255 - image
 
-
-# Detect face
-def face_detection(img):
-    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(img, 1.35, 5)
-    faces.sort()
-    if len(faces) <= 0:
-        return img, img
-    else:
-        for (x, y, w, h) in faces:
-            print(x, y, w, h)
-            cv2.rectangle(img, (x, y), (x + w, y + h), (255, 255, 0), 2)
-            img2 = img[y:y + h, x:x + w]
-            return img, img2
-
-
-def trignometry_for_distance(a, b):
-    return math.sqrt(((b[0] - a[0]) * (b[0] - a[0])) +\
-                    ((b[1] - a[1]) * (b[1] - a[1])))
-
-
-# Find eyes
-def face_alignment(img_path):
-    eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
-    img_raw = cv2.imread(img_path)
-    #img_raw = cv2.cvtColor(img_raw, cv2.COLOR_BGR2RGB)
-    screen = cv2.cvtColor(img_raw, cv2.COLOR_BGR2GRAY)
-    img, gray_img = face_detection(screen)
-    plt.imshow(img, 'gray')
-    plt.show()
-    eyes = eye_cascade.detectMultiScale(gray_img)
-
-    # for multiple people in an image find the largest
-    # pair of eyes
-    new_img = img
-    if len(eyes) >= 2:
-        eye = eyes[:, 2]
-        container1 = []
-        for i in range(0, len(eye)):
-            container = (eye[i], i)
-            container1.append(container)
-        df = pd.DataFrame(container1, columns=[
-                        "length", "idx"]).sort_values(by=['length'])
-        eyes = eyes[df.idx.values[0:2]]
-
-        # deciding to choose left and right eye
-        eye_1 = eyes[0]
-        eye_2 = eyes[1]
-        if eye_1[0] > eye_2[0]:
-            left_eye = eye_2
-            right_eye = eye_1
-        else:
-            left_eye = eye_1
-            right_eye = eye_2
-
-        # center of eyes
-        # center of right eye
-        right_eye_center = (
-            int(right_eye[0] + (right_eye[2]/2)),
-        int(right_eye[1] + (right_eye[3]/2)))
-        right_eye_x = right_eye_center[0]
-        right_eye_y = right_eye_center[1]
-        cv2.circle(img, right_eye_center, 2, (255, 0, 0), 3)
-
-        # center of left eye
-        left_eye_center = (
-            int(left_eye[0] + (left_eye[2] / 2)),
-        int(left_eye[1] + (left_eye[3] / 2)))
-        left_eye_x = left_eye_center[0]
-        left_eye_y = left_eye_center[1]
-        cv2.circle(img, left_eye_center, 2, (255, 0, 0), 3)
-
-        # finding rotation direction
-        if left_eye_y > right_eye_y:
-            print("Rotate image to clock direction")
-            point_3rd = (right_eye_x, left_eye_y)
-            direction = -1 # rotate image direction to clock
-        else:
-            print("Rotate to inverse clock direction")
-            point_3rd = (left_eye_x, right_eye_y)
-            direction = 1 # rotate inverse direction of clock
-
-        cv2.circle(img, point_3rd, 2, (255, 0, 0), 2)
-        a = trignometry_for_distance(left_eye_center,
-                                    point_3rd)
-        b = trignometry_for_distance(right_eye_center,
-                                    point_3rd)
-        c = trignometry_for_distance(right_eye_center,
-                                    left_eye_center)
-        cos_a = (b*b + c*c - a*a)/(2*b*c)
-        angle = (np.arccos(cos_a) * 180) / math.pi
-
-        if direction == -1:
-            angle = 90 - angle
-        else:
-            angle = -(90-angle)
-
-        # rotate image
-        new_img = img
-        h, w = new_img.shape[:2]
-        new_img = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-        print("asdadsasdads")
-        print(angle)
-    return new_img
 
 def show_img_gray(img):
-    plt.imshow(img,'gray')
-    plt.show()
+    plt.imshow(img, 'gray')
+    # plt.show()
+
 
 def show_img(img):
     plt.imshow(img)
-    plt.show()
-
+    # plt.show()
