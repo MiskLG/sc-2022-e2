@@ -70,20 +70,52 @@ class Person:
         return self
 
     def fit2(self, text):
+        #TODO number-text converter
+        #TODO more variants for SRB, 5R8
+        #TODO tidyup dates
+        #TODO tidyup < char and empty spaces
         value = 0
         first_line = text.find('SRB')
         if first_line == -1:
             first_line = text.find('8RB')
             if first_line == -1:
-                return value
+                first_line = text.find('SR8')
+                if first_line == -1:
+                    first_line = text.find('5RB')
+                    if first_line == -1:
+                        first_line = text.find('PRB')
+                        if first_line == -1:
+                            return value
         # can extract name and last name probably
+        test3 = False
         value += 1  # value = 1
         second_line = text.find('SRB', first_line + 3)
         if second_line == -1:
             second_line = text.find('8RB', first_line + 3)
             if second_line == -1:
-                return value
+                second_line = text.find('SR8', first_line + 3)
+                if second_line == -1:
+                    second_line = text.find('5RB', first_line + 3)
+                    if second_line == -1:
+                        second_line = text.find('PRB', first_line + 3)
+                        if second_line == -1:
+                            test3 = True
         # can extract data somehow
+
+        if test3:
+            second_line = text.find('SRB')
+            if second_line == -1 or second_line == first_line:
+                second_line = text.find('8RB')
+                if second_line == -1 or second_line == first_line:
+                    second_line = text.find('SR8')
+                    if second_line == -1 or second_line == first_line:
+                        second_line = text.find('5RB')
+                        if second_line == -1 or second_line == first_line:
+                            second_line = text.find('PRB')
+                            if second_line == -1 or second_line == first_line:
+                                return value
+            if first_line > second_line:
+                second_line, first_line = first_line, second_line
         value += 1  # value = 2
         print("passed")
 
@@ -93,19 +125,22 @@ class Person:
         self.surname = text[first_line + 3:surname_end]
         if len(self.surname) < 16:
             value += 1  # v = 4
+        self.surname = self.number_text_converter(self.surname, 0)
         name_end = text.find('<', surname_end + 2)  # usually there should be 2
         if name_end != -1:
             value += 1
         self.name = text[surname_end + 2: name_end]
         if len(self.name) < 12:
             value += 1  # value = 5
-
+        self.name = self.number_text_converter(self.name, 0)
         crr = second_line - 10
         if crr < 0:
             crr = 0
         self.number = text[crr:second_line]
         if self.number.isdigit():
             value += 1  # value = 6
+        self.number = self.number_text_converter(self.number, 1)
+
 
         gender = text.find('F', second_line + 3)
         if gender == -1:
@@ -119,11 +154,13 @@ class Person:
 
         temp = text[second_line + 3:second_line + 3 + 6]
         self.birth_date = self.format_date(temp, "19")
+        self.birth_date = self.number_text_converter(self.birth_date, 1)
         if temp.isdigit():
             value += 1  # value = 8
 
         temp = text[gender + 1: gender + 1 + 6]
         self.expiry_date = self.format_date(temp, "20")
+        self.expiry_date = self.number_text_converter(self.expiry_date, 1)
         if temp.isdigit():
             value += 1  # value = 9
         return value
@@ -134,6 +171,55 @@ class Person:
         day = date[4:6]
         return day + "." + month + "." + year
 
+    '''
+        convert_type: 0 for number to text
+                      1 for text to number
+    '''
+    def number_text_converter(self, text, convert_type):
+        mix_file = []
+        mix_file.append(('4', 'A'))
+        mix_file.append(('8', 'B'))
+        mix_file.append(('0', 'C'))
+        mix_file.append(('6', 'D'))
+        mix_file.append(('3', 'E'))
+        mix_file.append(('4', 'F'))
+        mix_file.append(('6', 'G'))
+        mix_file.append(('2', 'H'))
+        mix_file.append(('1', 'I'))
+        mix_file.append(('9', 'J'))
+        mix_file.append(('7', 'K'))
+        mix_file.append(('1', 'L'))
+        mix_file.append(('2', 'M'))
+        mix_file.append(('2', 'N'))
+        mix_file.append(('0', 'O'))
+        mix_file.append(('4', 'P'))
+        mix_file.append(('8', 'R'))
+        mix_file.append(('5', 'S'))
+        mix_file.append(('1', 'T'))
+        mix_file.append(('2', 'U'))
+        mix_file.append(('7', 'V'))
+        mix_file.append(('2', 'Z'))
+
+        mix_file2 = []
+        mix_file2.append(('0', '0'))
+        mix_file2.append(('1', 'I'))
+        mix_file2.append(('2', 'Z'))
+        mix_file2.append(('3', 'E'))
+        mix_file2.append(('4', 'A'))
+        mix_file2.append(('5', 'S'))
+        mix_file2.append(('6', 'G'))
+        mix_file2.append(('7', 'V'))
+        mix_file2.append(('8', 'B'))
+        mix_file2.append(('9', 'P'))
+
+        if convert_type == 0:
+            for mix in mix_file2:
+                text = text.replace(mix[0], mix[1])
+        else:
+            for mix in mix_file:
+                text = text.replace(mix[1], mix[0])
+
+        return text
 
 def extract_information_from_image(image_path) -> Person:
     """
