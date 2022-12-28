@@ -5,6 +5,7 @@ import sys
 import cv2
 import dlib
 import matplotlib.pyplot as plt
+import numpy as np
 import pyocr
 import pyocr.builders
 from PIL import Image
@@ -70,10 +71,11 @@ class Person:
         return self
 
     def fit2(self, text):
-        #TODO number-text converter
-        #TODO more variants for SRB, 5R8
-        #TODO tidyup dates
-        #TODO tidyup < char and empty spaces
+        # TODO number-text converter
+        # TODO more variants for SRB, 5R8
+        # TODO tidyup dates
+        # TODO tidyup < char and empty spaces
+        # TODO try eye orientation
         value = 0
         first_line = text.find('SRB')
         if first_line == -1:
@@ -114,14 +116,16 @@ class Person:
                             second_line = text.find('PRB')
                             if second_line == -1 or second_line == first_line:
                                 return value
-            if first_line > second_line:
-                second_line, first_line = first_line, second_line
+        if first_line > second_line:
+            second_line, first_line = first_line, second_line
         value += 1  # value = 2
         print("passed")
 
         surname_end = text.find('<', first_line + 3)
         if surname_end != -1:
             value += 1  # value = 3
+        if surname_end > second_line:
+            surname_end = second_line
         self.surname = text[first_line + 3:surname_end]
         if len(self.surname) < 16:
             value += 1  # v = 4
@@ -140,7 +144,6 @@ class Person:
         if self.number.isdigit():
             value += 1  # value = 6
         self.number = self.number_text_converter(self.number, 1)
-
 
         gender = text.find('F', second_line + 3)
         if gender == -1:
@@ -175,6 +178,7 @@ class Person:
         convert_type: 0 for number to text
                       1 for text to number
     '''
+
     def number_text_converter(self, text, convert_type):
         mix_file = []
         mix_file.append(('4', 'A'))
@@ -201,7 +205,7 @@ class Person:
         mix_file.append(('2', 'Z'))
 
         mix_file2 = []
-        mix_file2.append(('0', '0'))
+        mix_file2.append(('0', 'O'))
         mix_file2.append(('1', 'I'))
         mix_file2.append(('2', 'Z'))
         mix_file2.append(('3', 'E'))
@@ -220,6 +224,7 @@ class Person:
                 text = text.replace(mix[1], mix[0])
 
         return text
+
 
 def extract_information_from_image(image_path) -> Person:
     """
@@ -260,6 +265,7 @@ def extract_information_from_image(image_path) -> Person:
     # ucitavanje i transformacija slike
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.medianBlur(image, ksize=5)
     screen = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
     # detekcija svih lica na grayscale slici
@@ -269,54 +275,129 @@ def extract_information_from_image(image_path) -> Person:
 
     show_img(image)
     (x, y, w, h) = (0, 0, 0, 0)
+    ff = 0
     # iteriramo kroz sve detekcije korak 1.
     for f in faces:
         (x, y, w, h) = face_utils.rect_to_bb(f)
+        ff = f
         print(x, y, w, h)
         # filtering small imange if it gets caught first
         if w < 200:
             continue
+        else:
+            break
+
+    # no face no program, a lot of work
+    if ff == 0:
+        return person
+
+    predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+
+    shape = predictor(image, ff)
+    # shape predstavlja 68 koordinata
+    shape = face_utils.shape_to_np(shape)
+    angle_list = []
+    pairs = []
+    pairs.append([0, 16])
+    pairs.append([36, 45])
+    pairs.append([31, 35])
+    pairs.append([5, 11])
+    pairs.append([2, 14])
+    pairs.append([17, 26])
+    pairs.append([6, 10])
+    pairs.append([27, 8])
+
+    i = 0
+    for p in pairs:
+        first = (shape[p[0]][0], shape[p[0]][1])
+        second = (shape[p[1]][0], shape[p[1]][1])
+        arctan_num = abs(first[1] - second[1]) / abs(first[0] - second[0])
+        temp = np.arctan(arctan_num) * 180 / np.pi
+        if i == 7:
+            temp -= 90
+        if first[1] > second[1]:
+            temp *= -1
+        angle_list.append(temp)
+        i += 1
+
+    print(angle_list)
+
+    builder = pyocr.builders.LineBoxBuilder()
+    builder.tesseract_layout = 11
+    builder.tesseract_flags = []
+    builder.tesseract_flags.append(r"--psm")
+    builder.tesseract_flags.append(r"11")
+
+    builder.tesseract_flags.append(r"-l")
+    builder.tesseract_flags.append(r"eng")
+
+    builder.tesseract_flags.append(r"-c")
+    builder.tesseract_flags.append(r"tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPRSTUVZ<")
+
+    bv = 0
+
+    angle = sum(angle_list) / len(angle_list)
+    print(angle)
+    h, w = image.shape[:2]
+    m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+    new_img = cv2.warpAffine(image, m, (w, h))
+    faces = detector(new_img)
+    x = 0
+    y = 0
+    w = 0
+    h = 0
+    for f in faces:
+        (x2, y2, w2, h2) = face_utils.rect_to_bb(f)
+        if w2 < 200:
+            continue
+        else:
+            x = x2
+            y = y2
+            w = w2
+            h = h2
+            break
 
     # no faces no program
     if x == 0 and y == 0 and w == 0 and h == 0:
         return person
-
-    # cv2.rectangle(new_img, (x - 200, y + h + 100), (x + 1700, y + h + 500), (255, 255, 0), 2)
     hmax, wmax = new_img.shape[:2]
     h_max_crr = y + h + 500
     w_max_crr = x + 1700
-
-    print(hmax, wmax)
-    print(h_max_crr, w_max_crr)
+    h_min_crr = y + h + 100
 
     if h_max_crr > hmax:
         h_max_crr = h_max_crr
     if w_max_crr > wmax:
         w_max_crr = wmax
+    if h_min_crr > hmax:
+        h_min_crr = hmax
     wmin = x - 200
     if wmin < 0:
         wmin = 0
-    roi_gray = new_img[y + h + 100:h_max_crr, wmin:w_max_crr]
-
-    builder = pyocr.builders.WordBoxBuilder()
-    builder.tesseract_flags = []
-    builder.tesseract_flags.append(r"--psm")
-    builder.tesseract_flags.append(r"11")
-
-    builder.tesseract_flags.append(r"-c")
-    builder.tesseract_flags.append(r"tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPRSTUVZ<")
-
+    roi_gray = new_img[h_min_crr:h_max_crr, wmin:w_max_crr]
+    angle += 1
     text = tool.image_to_string(
         Image.fromarray(roi_gray),
         lang=lang,
         builder=builder
     )
+    text_whole = ""
+    for i in range(0, len(text)):
+        text_whole += text[i].content
+    text_whole = text_whole.replace(' ', '')
+    ptemp = Person(None, None, None, None, None, None)
+    value = ptemp.fit2(text_whole)
+    print(text_whole)
+    ba = angle
+    bt = len(text)
+    print(value)
+    person = ptemp
+    if value == 10:
+        return person
 
-    angle = -10
+    angle -= 10
     ba = 100
     bt = 100
-    bv = 0
-    btt = 0
     for i in range(0, 40):
         h, w = image.shape[:2]
         m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
@@ -365,6 +446,7 @@ def extract_information_from_image(image_path) -> Person:
             text_whole = ""
             for i in range(0, len(text)):
                 text_whole += text[i].content
+            text_whole = text_whole.replace(' ', '')
             ptemp = Person(None, None, None, None, None, None)
             value = ptemp.fit2(text_whole)
             print(text_whole)
@@ -377,7 +459,6 @@ def extract_information_from_image(image_path) -> Person:
             if value == 10:
                 break
 
-    print(btt)
     print(ba)
     h, w = image.shape[:2]
     m = cv2.getRotationMatrix2D((w // 2, h // 2), ba, 1.0)
