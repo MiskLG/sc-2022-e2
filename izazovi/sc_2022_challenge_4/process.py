@@ -151,6 +151,8 @@ class Person:
             gender = text.find('M', second_line + 3)
             if gender != -1:
                 value += 1  # v =7
+            else:
+                gender = text.find('H', second_line + 3)
         else:
             self.gender = 'F'
             value += 1  # value = 7
@@ -265,7 +267,6 @@ def extract_information_from_image(image_path) -> Person:
     # ucitavanje i transformacija slike
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = cv2.medianBlur(image, ksize=5)
     screen = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
     # detekcija svih lica na grayscale slici
@@ -388,9 +389,10 @@ def extract_information_from_image(image_path) -> Person:
     ptemp = Person(None, None, None, None, None, None)
     value = ptemp.fit2(text_whole)
     print(text_whole)
-    ba = angle
+    sa = angle
     bt = len(text)
     print(value)
+    bv = value
     person = ptemp
     if value == 10:
         return person
@@ -450,15 +452,77 @@ def extract_information_from_image(image_path) -> Person:
             ptemp = Person(None, None, None, None, None, None)
             value = ptemp.fit2(text_whole)
             print(text_whole)
-            ba = angle
-            bt = len(text)
             print(value)
             if bv <= value:
+                ba = angle
                 bv = value
                 person = ptemp
             if value == 10:
                 break
 
+    angle = sa - 5
+    if bv < 5:
+        print("part444")
+        for i in range(0, 20):
+            h, w = image.shape[:2]
+            m = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+            new_img = cv2.warpAffine(image, m, (w, h))
+            faces = detector(new_img)
+            x = 0
+            y = 0
+            w = 0
+            h = 0
+            for f in faces:
+                (x2, y2, w2, h2) = face_utils.rect_to_bb(f)
+                if w2 < 200:
+                    continue
+                else:
+                    x = x2
+                    y = y2
+                    w = w2
+                    h = h2
+                    break
+
+            # no faces no program
+            if x == 0 and y == 0 and w == 0 and h == 0:
+                continue
+            hmax, wmax = new_img.shape[:2]
+            h_max_crr = y + h + 500
+            w_max_crr = x + 1700
+            h_min_crr = y + h + 100
+
+            if h_max_crr > hmax:
+                h_max_crr = h_max_crr
+            if w_max_crr > wmax:
+                w_max_crr = wmax
+            if h_min_crr > hmax:
+                h_min_crr = hmax
+            wmin = x - 200
+            if wmin < 0:
+                wmin = 0
+            roi_gray = new_img[h_min_crr:h_max_crr, wmin:w_max_crr]
+            roi_gray = get_binary_image(roi_gray)
+            angle += 0.5
+            text = tool.image_to_string(
+                Image.fromarray(roi_gray),
+                lang=lang,
+                builder=builder
+            )
+            if bt > len(text) >= 2:
+                text_whole = ""
+                for i in range(0, len(text)):
+                    text_whole += text[i].content
+                text_whole = text_whole.replace(' ', '')
+                ptemp = Person(None, None, None, None, None, None)
+                value = ptemp.fit2(text_whole)
+                print(text_whole)
+                print(value)
+                if bv <= value:
+                    ba = angle
+                    bv = value
+                    person = ptemp
+                if value == 10:
+                    break
     print(ba)
     h, w = image.shape[:2]
     m = cv2.getRotationMatrix2D((w // 2, h // 2), ba, 1.0)
@@ -478,8 +542,9 @@ def image_bin(image_gs):
 
 
 def get_binary_image(img_base):
-    # image_ada = cv2.GaussianBlur(image_ada, (11, 11), 5)
-    image_ada_bin = cv2.adaptiveThreshold(img_base, 255, cv2.CALIB_CB_ADAPTIVE_THRESH, cv2.THRESH_BINARY_INV, 251, 1)
+    img_base = cv2.GaussianBlur(img_base, (5, 5), 3)
+    img_base = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY)
+    image_ada_bin = cv2.adaptiveThreshold(img_base, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 101, 3)
     return image_ada_bin
 
 
